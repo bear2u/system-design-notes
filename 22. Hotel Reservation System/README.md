@@ -1,76 +1,75 @@
-# Chapter 22: Hotel Reservation System
+# 22장: 호텔 예약 시스템
 
-## Introduction
-In this chapter, we're designing a **hotel reservation system**, similar to Marriott International.
+## 소개
+이 장에서는 Marriott International과 같은 **호텔 예약 시스템**을 설계합니다.
 
-Applicable to other types of systems as well - Airbnb, flight reservation, movie ticket booking.
+Airbnb, 항공권 예약, 영화 티켓 예매 같은 다른 예약 시스템에도 유사한 설계 원칙을 적용할 수 있습니다.
 
 ---
 
-## Step 1: Understand the Problem and Establish Design Scope
-Before diving into designing the system, we should ask the interviewer questions to clarify the scope:
- - C: What is the scale of the system?
- - I: We're building a website for a hotel chain \w 5000 hotels and 1mil rooms
- - C: Do customers pay when they make a reservation or when they arrive at the hotel?
- - I: They pay in full when making reservations.
- - C: Do customers book hotel rooms through the website only? Do we have to support other reservation options such as phone calls?
- - I: They make bookings through the website or app only.
- - C: Can customers cancel reservations?
- - I: Yes
- - C: Other things to consider?
- - I: Yes, we allow overbooking by 10%. Hotel will sell more rooms than there actually are. Hotels do this in anticipation that clients will cancel bookings.
- - C: Since not much time, we'll focus on - show hotel-related page, hotel-room details page, reserve a room, admin panel, support overbooking.
- - I: Sounds good.
- - I: One more thing - hotel prices change all the time. Assume a hotel room's price changes every day.
- - C: OK.
+## 1단계: 문제 이해 및 설계 범위 설정
+시스템 설계에 들어가기 전에 면접관에게 질문해 범위를 명확히 해야 합니다.
+ - C: 시스템 규모는 어느 정도인가?
+ - I: 호텔 5,000개와 객실 100만 개를 보유한 호텔 체인의 웹사이트를 만든다.
+ - C: 고객은 예약할 때 결제하는가, 호텔에 도착했을 때 결제하는가?
+ - I: 예약 시 전액 결제한다.
+ - C: 고객은 웹사이트에서만 예약하는가? 전화 예약 같은 다른 방식도 지원해야 하는가?
+ - I: 웹사이트 또는 앱으로만 예약한다.
+ - C: 예약을 취소할 수 있는가?
+ - I: 그렇다.
+ - C: 추가로 고려할 사항이 있는가?
+ - I: 10% 오버부킹을 허용한다. 실제 객실 수보다 더 많은 객실을 판매할 수 있으며 취소 가능성을 고려한 정책이다.
+ - C: 시간이 제한되어 있으므로 호텔 페이지, 객실 상세 페이지, 객실 예약, 관리자 패널, 오버부킹 지원에 집중하겠다.
+ - I: 좋다.
+ - I: 한 가지 더 있다. 호텔 가격은 계속 바뀐다. 객실 가격이 매일 변경된다고 가정한다.
+ - C: 알겠다.
 
-### **Non-functional requirements**
- - Support high concurrency - there might be a lot of customers trying to book the same hotel during peak season.
- - Moderate latency - it's ideal to have low latency when a user makes a reservation, but it's acceptable if the system takes a few seconds to process it.
+### **비기능 요구사항**
+ - **높은 동시성 지원:** 성수기에는 많은 고객이 같은 호텔을 동시에 예약하려 할 수 있습니다.
+ - **적당한 지연 시간:** 예약 시 낮은 지연 시간이 이상적이지만 처리에 몇 초가 걸리는 것은 허용할 수 있습니다.
 
-### **Back-of-the-envelope estimation**
- - 5000 hotels and 1mil rooms in total
- - Assume 70% of rooms are occupied and average stay duration is 3 days
- - Estimated daily reservations - 1mil * 0.7 / 3 = ~240k reservations per day
- - Reservations per second - 240k / 10^5 seconds in a day = ~3. Average reservation TPS is low.
+### **개략적 규모 추정**
+ - 호텔 5,000개, 전체 객실 100만 개
+ - 객실 점유율 70%, 평균 숙박 기간 3일 가정
+ - 일일 예약 건수 = 1mil × 0.7 / 3 ≈ 하루 240k건
+ - 초당 예약 수 = 240k / 하루 약 10^5초 ≈ 3 TPS. 평균 예약 TPS는 낮습니다.
 
-Let's estimate the QPS. If we assume that there are three steps to reach the reservation page and there is a 10% conversion rate per page,
-we can estimate that if there are 3 reservations, then there must be 30 views of reservation page and 300 views of hotel room detail page.
+예약 페이지까지 세 단계를 거치며 각 페이지의 다음 단계 전환율이 10%라고 가정합니다.
+초당 예약이 3건이라면 예약 페이지 조회는 약 30건, 객실 상세 페이지 조회는 약 300건이라고 추정할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/qps-estimation.png" alt="qps-estimation" width="500" />
+    <img src="./images/qps-estimation.png" alt="QPS 추정" width="500" />
 </div>
 
 ---
 
-## Step 2: Propose High-Level Design and Get Buy-In
-We'll explore - API Design, Data model, high-level design.
+## 2단계: 상위 수준 설계 제안 및 합의
+API 설계, 데이터 모델, 상위 수준 아키텍처를 살펴봅니다.
 
-### **API Design**
-This API Design focuses on the core endpoints (using RESTful practices), we'll need in order to support a hotel reservation system.
+### **API 설계**
+호텔 예약 시스템의 핵심 기능을 지원하는 RESTful 엔드포인트를 중심으로 설계합니다.
 
-A fully-fledged system would require a more extensive API with support for searching for rooms based on lots of criteria, but we won't be focusing on that in this section.
-Reason is that they aren't technically challenging, so they're out of scope.
+실제 서비스라면 다양한 조건에 따른 객실 검색 등 훨씬 많은 API가 필요하지만, 이 장에서는 시스템 설계 관점에서 더 중요한 부분에 집중합니다.
 
-**Hotel-related API**
- - `GET /v1/hotels/{id}` - get detailed info about a hotel
- - `POST /v1/hotels` - add a new hotel. Only available to ops
- - `PUT /v1/hotels/{id}` - update hotel info. Only available to ops
- - `DELETE /v1/hotels/{id}` - delete a hotel. API is only available to ops
+**호텔 관련 API**
+ - `GET /v1/hotels/{id}` - 호텔 상세 정보 조회
+ - `POST /v1/hotels` - 새 호텔 추가. 운영 담당자만 사용 가능
+ - `PUT /v1/hotels/{id}` - 호텔 정보 갱신. 운영 담당자만 사용 가능
+ - `DELETE /v1/hotels/{id}` - 호텔 삭제. 운영 담당자만 사용 가능
 
-**Room-related API**
- - `GET /v1/hotels/{id}/rooms/{id}` - get detailed information about a room
- - `POST /v1/hotels/{id}/rooms` - Add a room. Only available to ops
- - `PUT /v1/hotels/{id}/rooms/{id}` - Update room info. Only available to ops
- - `DELETE /v1/hotels/{id}/rooms/{id}` - Delete a room. Only available to ops
+**객실 관련 API**
+ - `GET /v1/hotels/{id}/rooms/{id}` - 객실 상세 정보 조회
+ - `POST /v1/hotels/{id}/rooms` - 객실 추가. 운영 담당자만 사용 가능
+ - `PUT /v1/hotels/{id}/rooms/{id}` - 객실 정보 갱신. 운영 담당자만 사용 가능
+ - `DELETE /v1/hotels/{id}/rooms/{id}` - 객실 삭제. 운영 담당자만 사용 가능
 
-**Reservation-related API**
- - `GET /v1/reservations` - get reservation history of current user
- - `GET /v1/reservations/{id}` - get detailed info about a reservation
- - `POST /v1/reservations` - make a new reservation
- - `DELETE /v1/reservations/{id}` - cancel a reservation
+**예약 관련 API**
+ - `GET /v1/reservations` - 현재 사용자의 예약 이력 조회
+ - `GET /v1/reservations/{id}` - 예약 상세 정보 조회
+ - `POST /v1/reservations` - 새 예약 생성
+ - `DELETE /v1/reservations/{id}` - 예약 취소
 
-Here's an example request to make a reservation:
+예약 생성 요청 예시는 다음과 같습니다.
 
 ```
 {
@@ -82,75 +81,75 @@ Here's an example request to make a reservation:
 }
 ```
 
-Note that the `reservationID` is an idempotency key to avoid double booking. Details explained in [concurrency section](#concurrency-issues)
+`reservationID`는 중복 예약을 방지하기 위한 멱등성 키(idempotency key)입니다. 자세한 내용은 [동시성 문제](#동시성-문제)에서 다룹니다.
 
-### **Data model**
-Before we choose what database to use, let's consider our access patterns.
+### **데이터 모델**
+데이터베이스를 선택하기 전에 접근 패턴을 살펴봅니다.
 
-We need to support the following queries:
- - View detailed info about a hotel
- - Find available types of rooms given a date range
- - Record a reservation
- - Look up a reservation or past history of reservations
+다음 쿼리를 지원해야 합니다.
+ - 호텔 상세 정보 조회
+ - 날짜 범위에 따른 이용 가능한 객실 유형 조회
+ - 예약 기록
+ - 예약 상세 또는 과거 예약 이력 조회
 
-From our estimations, we know the scale of the system is not large, but we need to prepare for traffic surges.
+규모 추정상 평균 트래픽은 아주 크지 않지만 트래픽 급증에는 대비해야 합니다.
 
-Given this knowledge, we'll choose a relational database because:
- - Relational DBs work well with read-heavy and less write-heavy systems.
- - NoSQL databases are normally optimized for writes, but we know we won't have many as only a fraction of users who visit the site make a reservation.
- - Relational DBs provide ACID guarantees. These are important for such a system as without them, we won't be able to prevent problems such as negative balance, double charge, etc.
- - Relational DBs can easily model the data as the structure is very clear.
+이 요구사항에서는 관계형 데이터베이스를 선택할 수 있습니다.
+ - 읽기 비중이 높고 쓰기량이 상대적으로 낮은 시스템에 잘 맞습니다.
+ - 실제 예약까지 진행하는 사용자는 전체 방문자의 일부이므로 쓰기량이 지나치게 크지 않습니다.
+ - 관계형 DB는 ACID 트랜잭션을 제공합니다. 예약과 결제 같은 시스템에서 이 기능은 중복 예약, 잘못된 재고 수량, 중복 과금 등의 문제를 방지하는 데 중요합니다.
+ - 데이터 구조와 관계가 명확해 모델링하기 쉽습니다.
 
-Here is our schema design:
-
-<div style="margin-left:3rem">
-    <img src="./images/schema-design.png" alt="schema-design" width="500" />
-</div>
-
-Most fields are self-explanatory. Only field worth mentioning is the `status` field which represents the state machine of a given room:
+스키마 예시는 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/status-state-machine.png" alt="status-state-machine" width="500" />
+    <img src="./images/schema-design.png" alt="스키마 설계" width="500" />
 </div>
 
-This data model works well for a system like Airbnb, but not for hotels where users don't reserve a particular room but a room type.
-They reserve a type of room and a room number is chosen at the point of reservation.
-
-This shortcoming will be addressed in the [Improved Data Model](#improved-data-model) section.
-
-### **High-level Design**
-We've chosen a microservice architecture for this design. It has gained great popularity in recent years:
+대부분의 필드는 직관적입니다. 주목할 필드는 객실 상태를 표현하는 `status` 필드입니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/high-level-design.png" alt="high-level-design" width="500" />
+    <img src="./images/status-state-machine.png" alt="상태 머신" width="500" />
 </div>
 
- - **Users**: book a hotel room on their phone or computer
- - **Admin**: perform administrative functions such as refunding/cancelling a payment, etc
- - **CDN**: caches static resources such as JS bundles, images, videos, etc
- - **Public API Gateway**: fully-managed service which supports rate limiting, authentication, etc.
- - **Internal APIs**: only visible to authorized personnel. Usually protected by a VPN.
- - **Hotel service**: provides detailed information about hotels and rooms. Hotel and room data is static, so it can be cached aggressively.
- - **Rate service**: provides room rates for different future dates. An interesting note about this domain is that prices depend on how full a hotel is at a given day.
- - **Reservation service**: receives reservation requests and reserves hotel rooms. Also tracks room inventory as reservations are made/cancelled.
- - **Payment service**: processes payments and updates reservation statuses on success.
- - **Hotel management service**: available to authorized personnel only. Allows certain administrative functions for managing and viewing reservations, hotels, etc.
+이 데이터 모델은 사용자가 특정 숙소나 객실 자체를 예약하는 Airbnb 같은 서비스에는 적합하지만 일반적인 호텔 예약에는 충분하지 않습니다.
+호텔에서는 특정 객실 번호보다 **객실 유형(room type)**을 예약하고 실제 객실 번호는 이후에 배정하는 경우가 많습니다.
 
-Inter-service communication can be facilitated via a RPC framework, such as gRPC.
+이 문제는 [개선된 데이터 모델](#개선된-데이터-모델)에서 수정합니다.
+
+### **상위 수준 설계**
+이 설계에서는 마이크로서비스 아키텍처를 사용합니다.
+
+<div style="margin-left:3rem">
+    <img src="./images/high-level-design.png" alt="상위 수준 설계" width="500" />
+</div>
+
+ - **사용자:** 휴대폰 또는 컴퓨터에서 호텔 객실을 예약합니다.
+ - **관리자:** 결제 환불/취소 등 관리 기능을 수행합니다.
+ - **CDN:** JavaScript 번들, 이미지, 동영상 같은 정적 리소스를 캐시합니다.
+ - **Public API Gateway:** 요청 제한, 인증 등의 기능을 제공하는 외부 API 진입점입니다.
+ - **내부 API:** 권한이 있는 직원만 사용하며 일반적으로 VPN이나 사내 네트워크 등으로 보호합니다.
+ - **호텔 서비스:** 호텔과 객실의 상세 정보를 제공합니다. 호텔/객실 기본 정보는 변경 빈도가 낮으므로 적극적으로 캐시할 수 있습니다.
+ - **요금 서비스:** 미래 날짜별 객실 요금을 제공합니다. 호텔 도메인에서는 특정 날짜의 예약률에 따라 가격이 달라질 수 있습니다.
+ - **예약 서비스:** 예약 요청을 받고 객실을 예약합니다. 예약 생성/취소에 따라 객실 재고도 관리합니다.
+ - **결제 서비스:** 결제를 처리하고 성공 시 예약 상태를 갱신합니다.
+ - **호텔 관리 서비스:** 권한이 있는 직원만 접근하며 예약, 호텔 등의 조회와 관리 기능을 제공합니다.
+
+서비스 간 통신에는 gRPC 같은 RPC 프레임워크를 사용할 수 있습니다.
 
 ---
 
-## Step 3: Design Deep Dive
-Let's dive deeper into:
- - Improved data model
- - Concurrency issues
- - Scalability
- - Resolving data inconsistency in microservices
+## 3단계: 상세 설계
+다음 항목을 자세히 살펴봅니다.
+ - 개선된 데이터 모델
+ - 동시성 문제
+ - 확장성
+ - 마이크로서비스 간 데이터 불일치 해결
 
-### **Improved data model**
-As mentioned in a previous section, we need to amend our API and schema to enable reserving a type of room vs. a particular one.
+### **개선된 데이터 모델**
+앞에서 설명한 것처럼 특정 객실이 아니라 객실 유형을 예약할 수 있도록 API와 스키마를 수정해야 합니다.
 
-For the reservation API, we no longer reserve a `roomID`, but we reserve a `roomTypeID`:
+예약 API에서는 더 이상 `roomID`를 예약하지 않고 `roomTypeID`를 사용합니다.
 
 ```
 POST /v1/reservations
@@ -164,42 +163,42 @@ POST /v1/reservations
 }
 ```
 
-Here's the updated schema:
+갱신된 스키마는 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/updated-schema.png" alt="updated-schema" width="500" />
+    <img src="./images/updated-schema.png" alt="갱신된 스키마" width="500" />
 </div>
 
- - **room**: contains information about a room
- - **room_type_rate**: contains information about prices for a given room type
- - **reservation**: records guest reservation data
- - **room_type_inventory**: stores inventory data about hotel rooms. 
+ - **room:** 개별 객실 정보를 저장합니다.
+ - **room_type_rate:** 객실 유형별 가격 정보를 저장합니다.
+ - **reservation:** 투숙객 예약 데이터를 기록합니다.
+ - **room_type_inventory:** 호텔 객실 유형별 재고를 저장합니다.
 
-Let's take a look at the `room_type_inventory` columns as that table is more interesting:
- - **hotel_id**: id of hotel
- - **room_type_id**: id of a room type
- - **date**: a single date
- - **total_inventory**: total number of rooms minus those that are temporarily taken off the inventory.
- - **total_reserved**: total number of rooms booked for given (hotel_id, room_type_id, date)
+`room_type_inventory` 테이블의 주요 컬럼은 다음과 같습니다.
+ - **hotel_id:** 호텔 ID
+ - **room_type_id:** 객실 유형 ID
+ - **date:** 특정 날짜
+ - **total_inventory:** 전체 객실 수에서 일시적으로 판매 불가 처리된 객실을 제외한 수
+ - **total_reserved:** 해당 `(hotel_id, room_type_id, date)`에 예약된 객실 수
 
-There are alternative ways to design this table, but having one room per (hotel_id, room_type_id, date) enables easy 
-reservation management and easier queries.
+이 테이블을 다른 형태로 설계할 수도 있지만 `(hotel_id, room_type_id, date)`별로 한 행을 두면 예약 재고 관리와 날짜 범위 조회가 단순해집니다.
 
-The rows in the table are pre-populated using a daily CRON job.
+테이블의 미래 날짜 행은 일일 CRON 작업으로 미리 생성할 수 있습니다.
 
-Sample data:
-| hotel_id | room_type_id | date       | total_inventory | total_reserved |
-|----------|--------------|------------|-----------------|----------------|
-| 211      | 1001         | 2021-06-01 | 100             | 80             |
-| 211      | 1001         | 2021-06-02 | 100             | 82             |
-| 211      | 1001         | 2021-06-03 | 100             | 86             |
-| 211      | 1001         | ...        | ...             |                |
-| 211      | 1001         | 2023-05-31 | 100             | 0              |
-| 211      | 1002         | 2021-06-01 | 200             | 16             |
-| 2210     | 101          | 2021-06-01 | 30              | 23             |
-| 2210     | 101          | 2021-06-02 | 30              | 25             |
+예시 데이터:
 
-Sample SQL query to check the availability of a type of room:
+| hotel_id | room_type_id | date | total_inventory | total_reserved |
+|----------|--------------|------|-----------------|----------------|
+| 211 | 1001 | 2021-06-01 | 100 | 80 |
+| 211 | 1001 | 2021-06-02 | 100 | 82 |
+| 211 | 1001 | 2021-06-03 | 100 | 86 |
+| 211 | 1001 | ... | ... | |
+| 211 | 1001 | 2023-05-31 | 100 | 0 |
+| 211 | 1002 | 2021-06-01 | 200 | 16 |
+| 2210 | 101 | 2021-06-01 | 30 | 23 |
+| 2210 | 101 | 2021-06-02 | 30 | 25 |
+
+특정 객실 유형의 이용 가능 여부를 확인하는 SQL 예시는 다음과 같습니다.
 
 ```
 SELECT date, total_inventory, total_reserved
@@ -208,75 +207,75 @@ WHERE room_type_id = ${roomTypeId} AND hotel_id = ${hotelId}
 AND date between ${startDate} and ${endDate}
 ```
 
-How to check availability for a specified number of rooms using that data (note that we support overbooking):
+오버부킹 10%를 지원하면서 지정된 객실 수를 예약할 수 있는지 확인하는 조건은 다음과 같습니다.
 
 ```
 if (total_reserved + ${numberOfRoomsToReserve}) <= 110% * total_inventory
 ```
 
-Now let's do some estimation about the storage volume.
- - We have 5000 hotels.
- - Each hotel has 20 types of rooms.
- - 5000 * 20 * 2 (years) * 365 (days) = 73mil rows
+저장 데이터 규모를 추정해 봅니다.
+ - 호텔 5,000개
+ - 호텔당 객실 유형 20개
+ - 5000 × 20 × 2년 × 365일 = 약 7,300만 행
 
-73 million rows is not a lot of data and a single database server can handle it.
-It makes sense, however, to setup read replication (potentially across different zones) to enable high availability.
+7,300만 행은 이 용도의 관계형 데이터베이스에서 관리 가능한 규모이며 단일 데이터베이스 클러스터로도 시작할 수 있습니다.
+고가용성을 위해 서로 다른 가용 영역에 읽기 복제본을 구성하는 것이 유용합니다.
 
-Follow-up question - if reservation data is too large for a single database, what would you do?
- - Store only current and future reservation data. Reservation history can be moved to cold storage.
- - Database sharding - we can shard our data by `hash(hotel_id) % servers_cnt` as we always select the `hotel_id` in our queries.
+후속 질문: 예약 데이터가 단일 데이터베이스로 감당하기 어려울 정도로 커지면 어떻게 할 것인가?
+ - 현재 및 미래 예약 데이터만 주 저장소에 유지하고 과거 예약 이력은 콜드 스토리지로 이동합니다.
+ - 대부분의 쿼리에 `hotel_id`가 포함되므로 `hash(hotel_id) % servers_cnt` 방식으로 샤딩할 수 있습니다.
 
-### **Concurrency issues**
-Another important problem to address is double booking.
+### **동시성 문제**
+중요한 문제 중 하나는 중복 예약(double booking)입니다.
 
-There are two issues to address:
- - Same user clicks on "book" twice
- - Multiple users try to book a room at the same time
+두 가지 상황을 처리해야 합니다.
+ - 같은 사용자가 "예약" 버튼을 두 번 누름
+ - 여러 사용자가 동시에 같은 남은 객실을 예약하려 함
 
-Here's a visualization of the first problem:
-
-<div style="margin-left:3rem">
-    <img src="./images/double-booking-single-user.png" alt="double-booking-single-user" width="500" />
-</div>
-
-There are two approaches to solving this problem:
- - Client-side handling - front-end can disable the book button once clicked. If a user disabled javascript, however, they won't see the button becoming grayed out.
- - Idemptent API - Add an idempotency key to the API, which enables a user to execute an action once, regardless of how many times the endpoint is invoked:
+첫 번째 문제는 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/idempotency.png" alt="idempotency" width="500" />
+    <img src="./images/double-booking-single-user.png" alt="단일 사용자 중복 예약" width="500" />
 </div>
 
-Here's how this flow works:
- - A reservation order is generated once you're in the process of filling in your details and making a booking. The reservation order is generated using a globally unique identifier.
- - Submit reservation 1 using the `reservation_id` generated in the previous step.
- - If "complete booking" is clicked a second time, the same `reservation_id` is sent and the backend detects that this is a duplicate reservation.
- - The duplication is avoided by making the `reservation_id` column have a unique constraint, preventing multiple records with that id being stored in the DB.
+두 가지 대응 방법이 있습니다.
+ - **클라이언트 처리:** 버튼을 한 번 클릭하면 프런트엔드에서 비활성화합니다. 하지만 네트워크 재시도나 직접 API 호출까지 막을 수는 없으므로 이것만으로 충분하지 않습니다.
+ - **멱등 API:** API에 멱등성 키를 추가합니다. 같은 요청이 여러 번 호출되어도 하나의 논리적 작업만 수행하도록 합니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/unique-constraint-violation.png" alt="unique-constraint-violation" width="500" />
+    <img src="./images/idempotency.png" alt="멱등성" width="500" />
 </div>
 
-What if there are multiple users making the same reservation?
+흐름은 다음과 같습니다.
+ - 사용자가 예약 정보를 입력하기 시작하면 전역적으로 고유한 식별자를 사용해 예약 주문 ID를 생성합니다.
+ - 앞 단계에서 생성한 `reservation_id`를 사용해 예약 1을 제출합니다.
+ - 사용자가 "예약 완료"를 다시 눌러도 같은 `reservation_id`가 전송되므로 백엔드가 중복 요청임을 감지합니다.
+ - 데이터베이스의 `reservation_id` 컬럼에 UNIQUE 제약조건을 두면 같은 ID의 여러 레코드가 저장되는 것을 방지할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/double-booking-multiple-users.png" alt="double-booking-multiple-users" width="500" />
+    <img src="./images/unique-constraint-violation.png" alt="고유 제약조건 위반" width="500" />
 </div>
 
- - Let's assume the transaction isolation level is not serializable
- - User 1 and 2 attempt to book the same room at the same time.
- - Transaction 1 checks if there are enough rooms - there are
- - Transaction 2 check if there are enough rooms - there are
- - Transaction 2 reserves the room and updates the inventory
- - Transaction 1 also reserves the room as it still sees there are 99 `total_reserved` rooms out of 100.
- - Both transactions successfully commit the changes
+여러 사용자가 동시에 마지막 남은 객실을 예약하면 어떻게 될까요?
 
-This problem can be solved using some form of locking mechanism:
- - Pessimistic locking
- - Optimistic locking
- - Database constraints
+<div style="margin-left:3rem">
+    <img src="./images/double-booking-multiple-users.png" alt="여러 사용자 중복 예약" width="500" />
+</div>
 
-Here's the SQL we use to reserve a room:
+ - 트랜잭션 격리 수준이 serializable이 아니라고 가정합니다.
+ - 사용자 1과 2가 동시에 같은 객실 유형을 예약합니다.
+ - 트랜잭션 1이 충분한 재고가 있는지 확인합니다. 있습니다.
+ - 트랜잭션 2도 충분한 재고가 있는지 확인합니다. 있습니다.
+ - 트랜잭션 2가 먼저 객실을 예약하고 재고를 갱신합니다.
+ - 트랜잭션 1은 자신이 읽었던 오래된 재고 값을 기준으로 예약을 진행할 수 있습니다.
+ - 제어 장치가 없다면 두 트랜잭션이 모두 성공해 허용 범위를 넘는 예약이 발생할 수 있습니다.
+
+이 문제는 다음과 같은 잠금 또는 무결성 제어 방식으로 해결할 수 있습니다.
+ - 비관적 잠금(Pessimistic Locking)
+ - 낙관적 잠금(Optimistic Locking)
+ - 데이터베이스 제약조건
+
+객실 예약 SQL의 기본 흐름은 다음과 같습니다.
 
 ```sql
 # step 1: check room inventory
@@ -299,166 +298,162 @@ AND date between ${startDate} and ${endDate}
 Commit
 ```
 
-#### Option 1: Pessimistic locking
-Pessimistic locking prevents simultaneous updates by putting a lock on a record while it's being updated.
+#### 선택지 1: 비관적 잠금
+비관적 잠금은 레코드를 갱신하는 동안 잠금을 걸어 다른 트랜잭션이 동시에 같은 데이터를 수정하지 못하게 합니다.
 
-This can be done in MySQL by using the `SELECT... FOR UPDATE` query, which locks the rows selected by the query until the transaction is committed.
-
-<div style="margin-left:3rem">
-    <img src="./images/pessimistic-locking.png" alt="pessimistic-locking" width="500" />
-</div>
-
-Pros:
- - Prevents applications from updating data that is being changed
- - Easy to implement and avoids conflict by serializing updates. Useful when there is heavy data contention.
-
-Cons:
- - Deadlocks may occur when multiple resources are locked.
- - This approach is not scalable - if transaction is locked for too long, this has impact on all other transactions trying to access the resource.
- - The impact is severe when the query selects a lot of resources and the transaction is long-lived.
-
-The author doesn't recommend this approach due to its scalability issues.
-
-#### Option 2: Optimistic locking
-Optimistic locking allows multiple users to attempt to update a record at the same time.
-
-There are two common ways to implement it - version numbers and timestamps. Version numbers are recommended as server clocks can be inaccurate.
+MySQL에서는 `SELECT ... FOR UPDATE`를 사용해 조회한 행을 트랜잭션이 커밋될 때까지 잠글 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/optimistic-locking.png" alt="optimistic-locking" width="500" />
+    <img src="./images/pessimistic-locking.png" alt="비관적 잠금" width="500" />
 </div>
 
- - A new `version` column is added to the database table
- - Before a user modifies a database row, the version number is read
- - When the user updates the row, the version number is increased by 1 and written back to the database
- - Database validation prevents the insert if the new version number doesn't exceed the previous one
+장점:
+ - 변경 중인 데이터를 다른 트랜잭션이 동시에 갱신하는 것을 방지합니다.
+ - 구현이 비교적 단순하고 충돌이 많은 환경에서 업데이트를 직렬화해 정합성을 유지할 수 있습니다.
 
-Optimistic locking is usually faster than pessimistic locking as we're not locking the database. 
-Its performance tends to degrade when concurrency is high, however, as that leads to a lot of rollbacks.
+단점:
+ - 여러 자원을 서로 다른 순서로 잠그면 데드락이 발생할 수 있습니다.
+ - 트랜잭션이 잠금을 오래 유지하면 같은 자원에 접근하려는 다른 트랜잭션 전체의 지연 시간이 커집니다.
+ - 많은 행을 잠그거나 트랜잭션이 오래 지속되면 영향이 더 커집니다.
 
-Pros:
- - It prevents applications from editing stale data
- - We don't need to acquire a lock in the database
- - Preferred option when data contention is low, ie rarely are there update conflicts
+따라서 높은 확장성이 필요한 경우 신중하게 사용해야 합니다.
 
-Cons:
- - Performance is poor when data contention is high
+#### 선택지 2: 낙관적 잠금
+낙관적 잠금은 여러 사용자가 동시에 같은 레코드 갱신을 시도하는 것을 허용하고, 최종 갱신 시점에 충돌을 감지합니다.
 
-Optimistic locking is a good option for our system as reservation QPS is not extremely high.
+일반적인 구현 방법은 버전 번호 또는 타임스탬프입니다. 서버 시계 오차 영향을 피하기 위해 버전 번호를 사용할 수 있습니다.
 
-#### Option 3: Database constraints
-This approach is very similar to optimistic locking, but the guardrails are implemented using a database constraint:
+<div style="margin-left:3rem">
+    <img src="./images/optimistic-locking.png" alt="낙관적 잠금" width="500" />
+</div>
+
+ - 데이터베이스 테이블에 `version` 컬럼을 추가합니다.
+ - 사용자가 행을 수정하기 전에 현재 버전 번호를 읽습니다.
+ - 업데이트할 때 이전 버전과 일치하는 조건을 확인하면서 버전 번호를 1 증가시킵니다.
+ - 다른 트랜잭션이 먼저 값을 바꿨다면 버전 조건이 맞지 않아 업데이트가 실패하고 재시도 또는 롤백할 수 있습니다.
+
+낙관적 잠금은 데이터베이스 행을 장시간 잠그지 않으므로 충돌이 적을 때 비관적 잠금보다 효율적인 경우가 많습니다.
+하지만 동시 충돌이 매우 많으면 재시도와 롤백이 급증해 성능이 저하됩니다.
+
+장점:
+ - 오래된 데이터를 기반으로 덮어쓰는 문제를 방지합니다.
+ - 데이터베이스에서 장시간 잠금을 획득할 필요가 없습니다.
+ - 데이터 경합이 낮아 업데이트 충돌이 드문 환경에 적합합니다.
+
+단점:
+ - 데이터 경합이 높으면 재시도가 많아져 성능이 떨어집니다.
+
+평균 예약 QPS가 아주 높지 않은 이 시스템에서는 좋은 선택지가 될 수 있습니다.
+
+#### 선택지 3: 데이터베이스 제약조건
+낙관적 잠금과 비슷한 목적을 데이터베이스 제약조건으로 구현할 수도 있습니다.
 
 ```
 CONSTRAINT `check_room_count` CHECK((`total_inventory - total_reserved` >= 0))
 ```
 
 <div style="margin-left:3rem">
-    <img src="./images/database-constraint.png" alt="database-constraint" width="500" />
+    <img src="./images/database-constraint.png" alt="데이터베이스 제약조건" width="500" />
 </div>
 
-Pros:
- - Easy to implement
- - Works well when data contention is small
+장점:
+ - 구현이 단순합니다.
+ - 데이터 경합이 크지 않을 때 잘 동작합니다.
 
-Cons:
- - Similar to optimistic locking, performs poorly when data contention is high
- - Database constraints cannot be easily version-controlled like application code
- - Not all databases support constraints
+단점:
+ - 낙관적 잠금과 마찬가지로 충돌이 매우 많으면 실패와 재시도가 증가할 수 있습니다.
+ - 데이터베이스 제약조건은 애플리케이션 코드와 별도의 스키마 마이그레이션으로 관리해야 합니다.
+ - 모든 데이터베이스가 동일한 수준의 제약조건 기능을 제공하는 것은 아닙니다.
 
-This is another good option for a hotel reservation system due to its ease of implementation.
+호텔 예약 시스템에서는 구현이 단순하다는 점에서 유용한 선택지입니다.
 
-### **Scalability**
-Usually, the load of a hotel reservation system is not high. 
+### **확장성**
+일반적으로 호텔 예약 시스템의 평균 예약 부하는 매우 높지 않을 수 있습니다.
 
-However, the interviewer might ask you how you'd handle a situation where the system gets adopted for a larger, popular travel site such as booking.com
-In that case, QPS can be 1000 times larger.
+하지만 booking.com 같은 대형 여행 플랫폼 규모로 확장한다고 가정하면 QPS가 훨씬 커질 수 있습니다.
 
-When there is such a situation, it is important to understand where our bottlenecks are. All the services are stateless, so they can be easily scaled via replication.
+이때는 병목 지점을 파악해야 합니다. 대부분의 애플리케이션 서비스는 무상태로 설계할 수 있으므로 인스턴스를 추가해 수평 확장하기 쉽습니다.
 
-The database, however, is stateful and it's not as obvious how it can get scaled.
+반면 데이터베이스는 상태를 가지므로 별도의 확장 전략이 필요합니다.
 
-One way to scale it is by implementing database sharding - we can split the data across multiple databases, where each of them contain a portion of the data.
+한 가지 방법은 데이터베이스 샤딩입니다. 전체 데이터를 여러 데이터베이스로 나누고 각 샤드가 데이터의 일부만 보관합니다.
 
-We can shard based on `hotel_id` as all queries filter based on it. 
-Assuming, QPS is 30,000, after sharding the database in 16 shards, each shard handles 1875 QPS, which is within a single MySQL cluster's load capacity.
+대부분의 쿼리가 `hotel_id`를 기준으로 조회하므로 호텔 ID로 샤딩할 수 있습니다.
+예를 들어 전체 QPS가 30,000이고 데이터베이스를 16개 샤드로 나누면 평균적으로 샤드당 약 1,875 QPS를 처리하게 됩니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/database-sharding.png" alt="database-sharding" width="500" />
+    <img src="./images/database-sharding.png" alt="데이터베이스 샤딩" width="500" />
 </div>
 
-We can also utilize caching for room inventory and reservations via Redis. We can set TTL so that old data can expire for days which are past.
+객실 재고와 예약 조회에는 Redis 캐시를 활용할 수도 있습니다. 이미 지난 날짜의 데이터는 TTL을 설정해 자동 만료할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/inventory-cache.png" alt="inventory-cache" width="500" />
+    <img src="./images/inventory-cache.png" alt="재고 캐시" width="500" />
 </div>
 
-The way we store an inventory is based on the `hotel_id`, `room_type_id` and `date`:
+재고 캐시 키는 `hotel_id`, `room_type_id`, `date`를 조합할 수 있습니다.
 
 ```
 key: hotelID_roomTypeID_{date}
 value: the number of available rooms for the given hotel ID, room type ID and date.
 ```
 
-Data consistency happens async and is managed by using a CDC streaming mechanism - database changes are read and applied to a separate system.
-Debezium is a popular option for synchronizing database changes with Redis.
+데이터베이스 변경 사항을 읽어 별도 시스템에 반영하는 CDC(Change Data Capture) 스트리밍 메커니즘으로 캐시를 비동기 갱신할 수 있습니다.
+Debezium은 데이터베이스 변경 이벤트를 다른 시스템으로 전달하는 데 사용할 수 있는 대표적인 CDC 도구입니다.
 
-Using such a mechanism, there is a possibility that the cache and database are inconsistent for some time.
-This is fine in our case because the database will prevent us from making an invalid reservation.
+이 방식에서는 캐시와 데이터베이스가 잠시 불일치할 수 있습니다.
+하지만 실제 예약 확정은 데이터베이스 트랜잭션과 제약조건으로 검증하므로 잘못된 예약을 최종 커밋하지 않도록 설계할 수 있습니다.
 
-This will cause some issue on the UI as a user would have to refresh the page to see that "there are no more rooms left", 
-but that is something which can happen regardless of this issue if eg a person hesitates a lot before making a reservation.
+캐시에 오래된 재고가 남아 있으면 UI에서 객실이 남아 있는 것처럼 보이다가 예약 시 실패할 수 있습니다. 사용자가 예약 화면을 오래 열어 둔 경우에도 비슷한 상황이 발생할 수 있으므로 최종 예약 단계에서 반드시 재고를 다시 검증해야 합니다.
 
-Caching pros:
- - Reduced database load
- - High performance, as Redis manages data in-memory
+캐싱의 장점:
+ - 데이터베이스 부하 감소
+ - Redis의 인메모리 접근을 이용한 높은 조회 성능
 
-Caching cons:
- - Maintaining data consistency between cache and DB is hard. We need to consider how the inconsistency impacts user experience.
+캐싱의 단점:
+ - 캐시와 DB 사이의 데이터 정합성을 유지하기 어렵습니다. 일시적인 불일치가 사용자 경험에 어떤 영향을 주는지 고려해야 합니다.
 
-### **Data consistency among services**
-A monolithic application enables us to use a shared relational database for ensuring data consistency.
+### **서비스 간 데이터 일관성**
+모놀리식 애플리케이션에서는 하나의 관계형 데이터베이스 트랜잭션으로 관련 작업을 원자적으로 처리하기 쉽습니다.
 
-In our microservice design, we chose a hybrid approach where some services are separate, 
-but the reservation and inventory APIs are handled by the same servicefor the reservation and inventory APIs.
+이 마이크로서비스 설계에서는 실용적인 하이브리드 접근을 사용해 일부 서비스는 분리하되 예약과 재고 변경처럼 강한 일관성이 필요한 API는 같은 서비스와 관계형 데이터베이스 안에서 처리할 수 있습니다.
 
-This is done because we want to leverage the relational database's ACID guarantees to ensure consistency.
+이렇게 하면 관계형 데이터베이스의 ACID 보장을 활용해 일관성을 유지하기 쉽습니다.
 
-However, the interviewer might challenge this approach as it's not a pure microservice architecture, where each service has a dedicated database:
+하지만 면접관은 서비스마다 별도 데이터베이스를 갖는 더 엄격한 마이크로서비스 구조를 요구할 수도 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/microservices-vs-monolith.png" alt="microservices-vs-monolith" width="500" />
+    <img src="./images/microservices-vs-monolith.png" alt="마이크로서비스와 모놀리스 비교" width="500" />
 </div>
 
-This can lead to consistency issues. In a monolithic server, we can leverage a relational DBs transaction capabilities to implement atomic operations:
+서비스가 하나의 데이터베이스를 공유하면 관계형 DB 트랜잭션을 사용해 원자적 작업을 구현할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/atomicity-monolith.png" alt="atomicity-monolith" width="500" />
+    <img src="./images/atomicity-monolith.png" alt="모놀리스의 원자성" width="500" />
 </div>
 
-It's more challenging, however, to guarantee this atomicity when the operation spans across multiple services:
+반대로 하나의 비즈니스 작업이 여러 서비스와 여러 데이터베이스에 걸쳐 있으면 동일한 원자성을 보장하기가 훨씬 어렵습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/microservice-non-atomic-operation.png" alt="microservice-non-atomic-operation" width="500" />
+    <img src="./images/microservice-non-atomic-operation.png" alt="마이크로서비스 비원자적 작업" width="500" />
 </div>
 
-There are some well-known techniques to handle these data inconsistencies:
- - **Two-phase commit**: a database protocol which guarantees atomic transaction commit across multiple nodes. 
-   It's not performant, though, since a single node lag leads to all nodes blocking the operation.
- - **Saga**: a sequence of local transactions, where compensating transactions are triggered if any of the steps in a workflow fail. This is an eventually consistent approach.
+서비스 간 데이터 불일치를 다루는 대표적인 기법은 다음과 같습니다.
+ - **2단계 커밋(Two-Phase Commit):** 여러 참여 노드의 트랜잭션 커밋을 조정해 원자성을 제공하는 프로토콜입니다. 참여 노드 하나가 지연되면 전체 작업이 대기할 수 있어 성능과 가용성 측면의 비용이 큽니다.
+ - **Saga:** 여러 로컬 트랜잭션의 연속으로 비즈니스 작업을 구성하고, 중간 단계가 실패하면 이미 수행한 작업을 되돌리는 보상 트랜잭션을 실행합니다. 일반적으로 최종 일관성 모델을 사용합니다.
 
-It's worth noting that addressing data inconsistencies across microservices is a challenging problem, which raise the system complexity.
-It is good to consider whether the cost is worth it, given our more pragmatic approach of encapsulating dependent operations within the same relational database.
+마이크로서비스 사이의 데이터 일관성 문제를 해결하면 시스템 복잡도가 크게 증가합니다.
+따라서 강하게 결합된 작업을 하나의 관계형 데이터베이스 트랜잭션 안에 두는 실용적인 접근과 완전한 서비스 분리 사이의 비용을 비교해야 합니다.
 
 ---
 
-## Step 4: Wrap Up
-We presented a design for a hotel reservation system.
+## 4단계: 마무리
+호텔 예약 시스템 설계를 살펴봤습니다.
 
-These are the steps we went through:
- - Gathering requirements and doing back-of-the-envelope calculations to understand the system's scale
- - We presented the API Design, Data Model and system architecture in the high-level design
- - In the deep dive, we explored alternative database schema designs as requirements changed
- - We discussed race conditions and proposed solutions - pessimistic/optimistic locking, database constraints
- - Ways to scale the system via database sharding and caching
- - Finally we addressed how to handle data consistency issues across multiple microservices
+진행한 단계는 다음과 같습니다.
+ - 요구사항을 수집하고 개략적 규모 추정으로 시스템 크기 파악
+ - API 설계, 데이터 모델, 상위 수준 시스템 아키텍처 제시
+ - 요구사항 변화에 맞춰 데이터베이스 스키마 개선
+ - 경쟁 상태와 해결책인 비관적 잠금, 낙관적 잠금, 데이터베이스 제약조건 검토
+ - 데이터베이스 샤딩과 캐싱을 이용한 확장 방법
+ - 여러 마이크로서비스에 걸친 데이터 일관성 처리 방법 검토
