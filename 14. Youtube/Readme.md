@@ -1,225 +1,224 @@
-# Chapter 14: Design YouTube
+# 14장: YouTube 설계
 
-## Introduction
-YouTube is a massive video streaming platform supporting video uploads, playback, and various interactions. This chapter focuses on designing a scalable video streaming system with the following core features:
-- **Fast video uploads**
-- **Smooth video streaming**
-- **Ability to change video quality**
-- **Low infrastructure cost**
-- **High availability and reliability**
+## 소개
+YouTube는 동영상 업로드, 재생, 다양한 사용자 상호작용을 지원하는 대규모 동영상 스트리밍 플랫폼입니다. 이 장에서는 다음 핵심 기능을 갖춘 확장 가능한 동영상 스트리밍 시스템을 설계합니다.
+- **빠른 동영상 업로드**
+- **부드러운 동영상 스트리밍**
+- **동영상 화질 변경 기능**
+- **낮은 인프라 비용**
+- **높은 가용성과 신뢰성**
 
-### Key Statistics (2020)
-- **2 billion monthly active users**
-- **5 billion videos watched per day**
-- **37% of mobile internet traffic comes from YouTube**
-- Available in **80 languages**
-- **$15.1 billion ad revenue** in 2019
-
----
-
-## Step 1: Understand the Problem and Scope
-
-### Core Functionalities
-1. Upload videos
-2. Watch videos
-
-### Supported Platforms
-- Mobile apps, web browsers, and smart TVs
-
-### Assumptions
-- **Daily Active Users (DAU):** 5 million
-- **Average Video Size:** 300 MB
-- **Upload Limits:** Max 1 GB per video
-- **Daily Storage Need:** 150 TB
-- **CDN Costs:** 5 million * 5 videos * 0.3GB * $0.02 =  $150,000/day (using Amazon CloudFront)
+### 주요 통계(2020년)
+- **월간 활성 사용자 20억 명**
+- **하루 50억 개의 동영상 시청**
+- **모바일 인터넷 트래픽의 37%가 YouTube에서 발생**
+- **80개 언어** 지원
+- 2019년 **광고 매출 151억 달러**
 
 ---
 
-## Step 2: High-Level Design
+## 1단계: 문제와 범위 이해
 
-### Components
+### 핵심 기능
+1. 동영상 업로드
+2. 동영상 시청
+
+### 지원 플랫폼
+- 모바일 앱, 웹 브라우저, 스마트 TV
+
+### 가정
+- **일간 활성 사용자(DAU):** 500만 명
+- **평균 동영상 크기:** 300 MB
+- **업로드 제한:** 동영상 하나당 최대 1 GB
+- **하루 저장 공간 요구량:** 150 TB
+- **CDN 비용:** 500만 명 * 동영상 5개 * 0.3GB * $0.02 = 하루 $150,000(Amazon CloudFront 사용 가정)
+
+---
+
+## 2단계: 상위 수준 설계
+
+### 구성 요소
 
 <div style="margin-left:3rem">
-    <img src="./images/high-level-design.png" alt="High Level Design" width="400">
+    <img src="./images/high-level-design.png" alt="상위 수준 설계" width="400">
 </div>
 
-1. **Client:** Devices like smartphones, computers, and TVs.
-2. **CDN (Content Delivery Network):** Stores and streams videos.
-3. **API Servers:** Handles all user interactions except video streaming (e.g., uploads, metadata updates).
-4. **Metadata Database:** Stores video metadata (e.g., title, description, size).
-5. **Original Storage:** Blob storage for uploaded videos.
-6. **Transcoding Servers:** Convert videos into multiple resolutions and formats.
-7. **Transcoded Storage:** Blob storage for transcoded videos.
+1. **클라이언트:** 스마트폰, 컴퓨터, TV 등의 디바이스입니다.
+2. **CDN(Content Delivery Network):** 동영상을 저장하고 스트리밍합니다.
+3. **API 서버:** 동영상 스트리밍을 제외한 사용자 상호작용을 처리합니다. 예: 업로드, 메타데이터 갱신.
+4. **메타데이터 데이터베이스:** 제목, 설명, 크기 등의 동영상 메타데이터를 저장합니다.
+5. **원본 저장소:** 업로드된 동영상을 보관하는 Blob Storage입니다.
+6. **트랜스코딩 서버:** 동영상을 여러 해상도와 포맷으로 변환합니다.
+7. **트랜스코딩 저장소:** 변환된 동영상을 보관하는 Blob Storage입니다.
 
 
 ---
 
-### Core Workflows
-#### 1. Video Uploading Flow
-- **Parallel Processes:**
-  1. Upload video to original storage.
-  2. Update video metadata in the database.
+### 핵심 처리 흐름
+#### 1. 동영상 업로드 흐름
+- **병렬 처리:**
+  1. 동영상을 원본 저장소에 업로드합니다.
+  2. 데이터베이스의 동영상 메타데이터를 갱신합니다.
 
-- **Video Upload (Steps):**
-
-    <div style="margin-left:3rem">
-        <img src="./images/video-uploading-flow.png" alt="Video Upload Flow" width="500">
-    </div>
-
-    - [1] Videos are uploaded to blob storage. 
-    - [2] Transcoding servers convert videos to multiple formats.
-    - [3] One trasncoding is complete, following two steps are exectued in parallel.
-        - [3a] Transcoded videos are sent to transcoded storage.
-        - [3b] Transcoding completion events are queued in the completion queue. 
-    - [3a.1] Videos are distributed to the CDN. 
-    - [3b.1] Completion handlers update metadata and inform users. 
-
-
-
-- **Metadata Upload (Steps):**
+- **동영상 업로드 단계:**
 
     <div style="margin-left:3rem">
-        <img src="./images/metadata-upload.png" alt="Metadata Upload" height="500">
+        <img src="./images/video-uploading-flow.png" alt="동영상 업로드 흐름" width="500">
     </div>
 
-    - The client in parallel sends a request to update the video metadata 
-    - The request contains video metadata, including file name, size, format, etc.
+    - [1] 동영상을 Blob Storage에 업로드합니다.
+    - [2] 트랜스코딩 서버가 동영상을 여러 포맷으로 변환합니다.
+    - [3] 트랜스코딩이 완료되면 다음 두 작업을 병렬로 실행합니다.
+        - [3a] 트랜스코딩된 동영상을 트랜스코딩 저장소로 보냅니다.
+        - [3b] 트랜스코딩 완료 이벤트를 완료 큐에 넣습니다.
+    - [3a.1] 동영상을 CDN으로 배포합니다.
+    - [3b.1] 완료 핸들러가 메타데이터를 갱신하고 사용자에게 알립니다.
+
+
+
+- **메타데이터 업로드 단계:**
+
+    <div style="margin-left:3rem">
+        <img src="./images/metadata-upload.png" alt="메타데이터 업로드" height="500">
+    </div>
+
+    - 클라이언트는 동영상 업로드와 병렬로 동영상 메타데이터 갱신 요청을 보냅니다.
+    - 요청에는 파일 이름, 크기, 포맷 등의 동영상 메타데이터가 포함됩니다.
     
        
 
 
-#### 2. Video Streaming Flow
+#### 2. 동영상 스트리밍 흐름
 
 <div style="margin-left: 3em;">
-  <img src="./images/video-streaming-flow.png" alt="Video Streaming Flow" height="400">
+  <img src="./images/video-streaming-flow.png" alt="동영상 스트리밍 흐름" height="400">
 </div>
 
-- Videos are streamed directly from the CDN using edge servers to minimize latency.
-- Some of te popular streaming protocols are MPEG_DASH, Apple HLS, Adobe HDS.
--  *Different streaming protocols support different video encodings and playback players.*
+- 지연 시간을 최소화하기 위해 엣지 서버를 통해 CDN에서 동영상을 직접 스트리밍합니다.
+- 대표적인 스트리밍 프로토콜로 MPEG-DASH, Apple HLS, Adobe HDS 등이 있습니다.
+- *스트리밍 프로토콜마다 지원하는 동영상 인코딩 방식과 재생 플레이어가 다를 수 있습니다.*
 
 
 ---
 
-## Step 3: Design Deep Dive
+## 3단계: 상세 설계
 
-### Video Transcoding
-#### Importance
-1. Raw video consumes large amounts of storage space. It Reduces storage space.
-2. Ensures compatibility across devices and browsers.
-3. Adapts video quality to network conditions.
+### 동영상 트랜스코딩
+#### 중요성
+1. 원본 동영상은 많은 저장 공간을 사용하므로 트랜스코딩을 통해 저장 및 전송 효율을 높일 수 있습니다.
+2. 여러 디바이스와 브라우저에서 재생할 수 있도록 호환성을 확보합니다.
+3. 네트워크 상태에 맞춰 동영상 화질을 조절할 수 있게 합니다.
 
-#### Components
-- **Container:** Encapsulates video, audio, and metadata (e.g., MP4, AVI).
-- **Codecs:** Compression and Decompression algorithms (e.g., H.264, VP9).
+#### 구성 요소
+- **컨테이너(Container):** 동영상, 오디오, 메타데이터를 하나의 형식으로 묶습니다. 예: MP4, AVI.
+- **코덱(Codec):** 압축과 압축 해제 알고리즘입니다. 예: H.264, VP9.
 
-#### Directed Acyclic Graph (DAG) Model
+#### DAG(Directed Acyclic Graph, 방향성 비순환 그래프) 모델
 <div style="margin-left: 3em;">
-    <img src="./images/dag-video-transcoding.png" alt="DAG Video Transcoding" width="600">
+    <img src="./images/dag-video-transcoding.png" alt="DAG 동영상 트랜스코딩" width="600">
 </div>
 
-- Transcoding a video is computationally expensive and time-consuming.
-- DAG Model defines tasks like encoding, thumbnail generation, and watermarking.
-- Allows high parallelism in video processing.
+- 동영상 트랜스코딩은 계산 비용이 높고 시간이 많이 걸립니다.
+- DAG 모델을 사용해 인코딩, 썸네일 생성, 워터마크 같은 작업과 의존 관계를 정의합니다.
+- 동영상 처리 작업의 높은 병렬성을 확보할 수 있습니다.
 
 
-- The original video is split into video, audio, and metadata. 
-    - Video encodings: Videos are converted to support different resolutions, codec, bitrates.
-    - Thumbnail: It can either be uploaded by a user or automatically generated bythe system.
-    - Watermark: Image overlay on top of your video contains identifying information about the video.
+- 원본 동영상을 비디오, 오디오, 메타데이터로 분리합니다.
+    - 동영상 인코딩: 여러 해상도, 코덱, 비트레이트를 지원하도록 변환합니다.
+    - 썸네일: 사용자가 직접 업로드하거나 시스템이 자동 생성할 수 있습니다.
+    - 워터마크: 동영상 위에 식별 정보를 담은 이미지를 겹쳐 표시합니다.
 
 ---
 
-### Video Transcoding Architecture
+### 동영상 트랜스코딩 아키텍처
 
 <div style="margin-left: 3em;">
-<img src="./images/video-transcoding-architecture.png" alt="Video Transcoding" width="600">
+<img src="./images/video-transcoding-architecture.png" alt="동영상 트랜스코딩" width="600">
 </div>
 
-1. **Preprocessor:** Splits videos into smaller chunks (GOP alignment). It has 4 responsibilities.
+1. **전처리기(Preprocessor):** 동영상을 더 작은 청크로 분리합니다(GOP 정렬). 주요 역할은 네 가지입니다.
 
     <div style="margin-left: 3em;">
-        <img src="./images/dag-config.png" alt="DAG Config" width="500">
+        <img src="./images/dag-config.png" alt="DAG 설정" width="500">
     </div>
 
-    - Video splitting: Video stream is split or further split into smaller Group of Pictures (GOP) alignment.
-    - It split videos by GOP alignment for old clients.
-    - It generates DAG based on configuration files client programmers write. 
-    - It stores GOPs and metadata in temporary storage in case the encoding fails, the system could use persisted data for retry operations.
+    - 동영상 분할: 동영상 스트림을 더 작은 GOP(Group of Pictures) 단위로 나눕니다.
+    - 구형 클라이언트를 지원하기 위해 GOP 정렬을 기준으로 동영상을 분할합니다.
+    - 클라이언트 개발자가 작성한 설정 파일을 기반으로 DAG를 생성합니다.
+    - 인코딩이 실패했을 때 재시도할 수 있도록 GOP와 메타데이터를 임시 저장소에 보관합니다.
 
 
-2. **DAG Scheduler:** Organizes tasks into sequential or parallel stages.
+2. **DAG 스케줄러:** 작업을 순차 또는 병렬 단계로 구성합니다.
     <div style="margin-left: 3em;">
-        <img src="./images/dag-scheduler.png" alt="DAG Scheduler" width="500">
+        <img src="./images/dag-scheduler.png" alt="DAG 스케줄러" width="500">
     </div>
 
-    - It splits a DAG graph into stages of tasks and puts them in the task queue in the resource manager. 
-    - Stage 1: video, audio, and metadata.
-    - The video file is further split into two tasks in stage 2: video encoding and thumbnail. 
+    - DAG 그래프를 여러 작업 단계로 나누고 리소스 관리자의 작업 큐에 넣습니다.
+    - 1단계: 비디오, 오디오, 메타데이터로 분리합니다.
+    - 2단계에서는 비디오 파일을 동영상 인코딩과 썸네일 생성 작업으로 다시 나눕니다.
 
 
-3. **Resource Manager:** Responsible for managing the efficiency of resource allocation.It
-contains 3 queues and a task scheduler.
+3. **리소스 관리자:** 효율적인 자원 할당을 관리합니다. 세 개의 큐와 작업 스케줄러를 포함합니다.
     <div style="margin-left: 3em;">
-        <img src="./images/resource-manager.png" alt="Resource Manager" width="700">
+        <img src="./images/resource-manager.png" alt="리소스 관리자" width="700">
     </div>
 
-    - Task queue: priority queue that contains tasks to be executed.
-    - Worker queue: priority queue that contains worker utilization info.
-    - Running queue: contains  currently running tasks and workers running the tasks.
-    - Task scheduler: picks the optimal task/worker, and instructs the chosen task worker to execute the job.
+    - 작업 큐: 실행할 작업이 들어 있는 우선순위 큐입니다.
+    - 워커 큐: 워커의 자원 사용 현황을 담는 우선순위 큐입니다.
+    - 실행 큐: 현재 실행 중인 작업과 해당 작업을 실행하는 워커를 저장합니다.
+    - 작업 스케줄러: 최적의 작업/워커 조합을 선택하고 선택된 워커에게 작업 실행을 지시합니다.
 
 
-4. **Task Workers:** Perform transcoding and other operations.
+4. **작업 워커:** 트랜스코딩과 기타 작업을 실행합니다.
     <div style="margin-left: 3em;">
-        <img src="./images/task-worker.png" alt="Task Worker" width="250">
+        <img src="./images/task-worker.png" alt="작업 워커" width="250">
    </div>
 
-    - Different task workers may run different tasks 
+    - 워커 종류에 따라 서로 다른 작업을 실행할 수 있습니다.
 
 
-5. **Temporary Storage:** Stores intermediate data for retries.
-    - The choice of storage system depends on factors like data type, data size, access frequency, data life span, etc. 
-6. **Output:** Transcoded videos ready for distribution.
+5. **임시 저장소:** 재시도를 위해 중간 데이터를 저장합니다.
+    - 저장 시스템은 데이터 유형, 크기, 접근 빈도, 수명 등의 조건에 따라 선택합니다.
+6. **출력:** 배포 가능한 트랜스코딩 동영상입니다.
 
 
 ---
 
-## System Optimizations
+## 시스템 최적화
 
-### Speed Optimizations
-1. **Parallel Video Uploads:** Split videos into smaller chunks for faster, resumable uploads.
+### 속도 최적화
+1. **동영상 병렬 업로드:** 동영상을 작은 청크로 나눠 더 빠르게 업로드하고 중단된 업로드를 이어서 재개할 수 있도록 합니다.
 
-    <img src="./images/video-split.png" alt="Video Split" width="600">
+    <img src="./images/video-split.png" alt="동영상 분할" width="600">
 
-2. **Distributed Upload Centers:** Use CDNs as upload hubs close to users.
-3. **Parallel Processing:** Decouple modules using message queues for high parallelism.
+2. **분산 업로드 센터:** 사용자와 가까운 CDN 거점을 업로드 허브로 활용합니다.
+3. **병렬 처리:** 메시지 큐로 모듈 간 결합도를 낮춰 높은 병렬성을 확보합니다.
 
-    <img src="./images/message-queue1.png" alt="Message Queue" width="600">
-    <img src="./images/message-queue2.png" alt="Message Queue" height="170" width="500">
+    <img src="./images/message-queue1.png" alt="메시지 큐" width="600">
+    <img src="./images/message-queue2.png" alt="메시지 큐" height="170" width="500">
 
-### Safety Optimizations
-1. **Pre-Signed URLs:** Restrict video uploads to authorized users.
+### 보안 최적화
+1. **사전 서명 URL(Pre-Signed URL):** 권한이 있는 사용자만 동영상을 업로드할 수 있도록 제한합니다.
 
-    <img src="./images/pres-signed-urls.png" alt="Pre Signed" width="500">
+    <img src="./images/pres-signed-urls.png" alt="사전 서명 URL" width="500">
 
-2. **Protect Videos:**
-   - **DRM Systems** (e.g., Apple FairPlay, Google Widevine).
-   - **AES Encryption.**
-   - **Watermarking.**
+2. **동영상 보호:**
+   - **DRM 시스템**(예: Apple FairPlay, Google Widevine)
+   - **AES 암호화**
+   - **워터마킹**
 
-### Cost-Saving Optimizations
-1. Serve only popular videos via CDN; less popular ones from high-capacity servers.
-2. Encode on-demand for rarely accessed videos.
-3. Regionalize video distribution based on popularity.
-4. Build custom CDNs and partner with ISPs to reduce bandwidth costs.
+### 비용 최적화
+1. 인기 동영상만 CDN에서 제공하고, 인기가 낮은 동영상은 대용량 원본 서버에서 제공하는 방식을 고려합니다.
+2. 접근 빈도가 낮은 동영상은 요청 시점에 인코딩하는 방식을 고려합니다.
+3. 지역별 인기도에 따라 동영상 배포 범위를 조정합니다.
+4. 자체 CDN을 구축하거나 ISP와 협력해 대역폭 비용을 줄일 수 있습니다.
 
 ---
 
-## Error Handling
-### Recoverable Errors
-- Retry failed uploads, transcoding, or resource allocation tasks.
+## 오류 처리
+### 복구 가능한 오류
+- 업로드, 트랜스코딩, 자원 할당 작업이 실패하면 재시도합니다.
 
-### Non-Recoverable Errors
-- Stop malformed video processing and return error codes.
+### 복구 불가능한 오류
+- 형식이 잘못된 동영상 처리를 중단하고 오류 코드를 반환합니다.
 

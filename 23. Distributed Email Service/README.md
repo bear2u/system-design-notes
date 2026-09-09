@@ -1,93 +1,91 @@
-# Chapter 23: Distributed Email Service
+# 23장: 분산 이메일 서비스
 
-## Introduction
+## 소개
 
-We'll design a **distributed email service**, similar to **Gmail** in this chapter.
+이 장에서는 **Gmail**과 유사한 **분산 이메일 서비스**를 설계합니다.
 
-In 2020, **Gmail** had 1.8bil active users, while **Outlook** had 400mil users worldwide.
-
----
-
-## Step 1: Understand the Problem and Establish Design Scope
-
-- C: How many users use the system?
-- I: 1bil users
-- C: I think following features are important - auth, send/receive email, fetch email, filter emails, search email, anti-spam protection.
-- I: Good list. Don't worry about auth for now.
-- C: How do users connect \w email servers?
-- I: Typically, email clients connect via SMTP, POP, IMAP, but we'll use HTTP for this problem.
-- C: Can emails have attachments?
-- I: Yes
-
-### **Non-functional requirements**
-
-- **Reliability** - we shouldn't lose data
-- **Availability** - We should use replication to prevent single points of failure. We should also tolerate partial system failures.
-- **Scalability** - As userbase grows, our system should be able to handle them.
-- **Flexibility and extensibility** - system should be flexible and easy to extend with new features. One of the reasons we chose HTTP over SMTP/other mail protocols.
-
-### **Back-of-the-envelope estimation**
-
-- **1bil users**
-- Assuming one person sends 10 emails per day -> **100k emails per second**.
-- Assuming one person receives 40 emails per day and each email on average has 50kb metadata -> **730pb storage per year**.
-- Assuming 20% of emails have storage attachments and average size is 500kb -> **1,460pb per year**.
+원문에서는 2020년 기준 **Gmail 활성 사용자 18억 명**, **Outlook 전 세계 사용자 4억 명** 규모를 예시로 제시합니다.
 
 ---
 
-## Step 2: Propose High-Level Design and Get Buy-In
+## 1단계: 문제 이해 및 설계 범위 설정
 
-### **Email knowledge 101**
+- C: 시스템 사용자는 몇 명인가?
+- I: 10억 명이다.
+- C: 인증, 이메일 송수신, 이메일 조회, 필터링, 검색, 스팸 방지 기능이 중요하다고 생각한다.
+- I: 좋은 목록이다. 인증은 여기서 제외한다.
+- C: 사용자는 이메일 서버에 어떻게 연결하는가?
+- I: 일반적으로 SMTP, POP, IMAP을 사용하지만 이 문제에서는 HTTP를 사용한다.
+- C: 이메일에 첨부파일을 넣을 수 있는가?
+- I: 그렇다.
 
-There are various protocols used for sending and receiving emails:
-- **SMTP** - standard protocol for sending emails from one server to another.
-- **POP** - standard protocol for receiving and downloading emails from a remote mail server to a local client. Once retrieved, emails are deleted from remote server.
-- **IMAP** - similar to POP, it is used for receiving and downloading emails from a remote server, but it keeps the emails on the server-side.
-- **HTTPS** - not technically an email protocol, but it can be used for web-based email clients.
+### **비기능 요구사항**
 
-Apart from the mailing protocol, there are some DNS records we need to configure for our email server - the MX records:
+- **신뢰성:** 데이터를 잃어서는 안 됩니다.
+- **가용성:** 복제를 사용해 단일 장애점을 줄이고 부분적인 시스템 장애도 견딜 수 있어야 합니다.
+- **확장성:** 사용자 수가 증가해도 처리할 수 있어야 합니다.
+- **유연성과 확장 가능성:** 새로운 기능을 쉽게 추가할 수 있어야 합니다. 여기서 SMTP 등의 전통적인 메일 프로토콜뿐 아니라 웹 클라이언트용 HTTP API도 사용하는 이유 중 하나입니다.
+
+### **개략적 규모 추정**
+
+- **사용자 10억 명**
+- 한 사람이 하루 10개의 이메일을 보낸다고 가정 → **초당 약 10만 개의 이메일**
+- 한 사람이 하루 40개의 이메일을 받고 이메일 하나의 메타데이터/본문 평균 크기를 50KB로 가정 → 원문 추정치 기준 **연간 약 730PB 저장 공간**
+- 이메일의 20%에 첨부파일이 있고 평균 크기가 500KB라고 가정 → 원문 추정치 기준 **연간 약 1,460PB**
+
+---
+
+## 2단계: 상위 수준 설계 제안 및 합의
+
+### **이메일 기본 지식**
+
+이메일 송수신에는 여러 프로토콜이 사용됩니다.
+- **SMTP:** 한 메일 서버에서 다른 서버로 이메일을 전송하는 표준 프로토콜입니다.
+- **POP:** 원격 메일 서버에서 로컬 클라이언트로 이메일을 가져오는 프로토콜입니다. 설정에 따라 다운로드 후 서버의 메일을 삭제하는 방식으로 사용할 수 있습니다.
+- **IMAP:** 원격 서버의 이메일을 조회하고 동기화하는 프로토콜로, 이메일을 서버에 유지하면서 여러 디바이스에서 상태를 동기화하기에 적합합니다.
+- **HTTPS:** 이메일 전용 프로토콜은 아니지만 웹 기반 이메일 클라이언트의 API 통신에 사용할 수 있습니다.
+
+메일 프로토콜 외에도 메일 서버를 위해 DNS의 MX 레코드를 구성해야 합니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/dns-lookup.png" alt="dns-lookup" width="500" />
+    <img src="./images/dns-lookup.png" alt="DNS 조회" width="500" />
 </div>
 
-Email attachments are sent base64-encoded and there is usually a size limit of 25mb on most mail services.
-This is configurable and varies from individual to corporate accounts.
+이메일 첨부파일은 MIME 메시지 안에서 Base64 등으로 인코딩될 수 있으며 많은 메일 서비스가 약 25MB 수준의 메시지/첨부 제한을 둡니다. 실제 제한은 서비스와 계정 유형에 따라 다릅니다.
 
-### **Traditional mail servers**
+### **전통적인 메일 서버**
 
-Traditional mail servers work well when there are a limited number of users, connected to a single server.
+전통적인 메일 서버 구조는 사용자 수가 제한적이고 하나의 서버에 연결하는 소규모 환경에서는 잘 동작할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/traditional-mail-server.png" alt="traditional-mail-server" width="500" />
+    <img src="./images/traditional-mail-server.png" alt="전통적인 메일 서버" width="500" />
 </div>
 
-- Alice logs into her Outlook email and presses "send". Email is sent to Outlook mail server. Communication is via SMTP.
-- Outlook server queries DNS to find MX record for gmail.com and transfers the email to their servers. Communication is via SMTP.
-- Bob fetches emails from his gmail server via IMAP/POP.
+- Alice가 Outlook에 로그인해 "보내기"를 누르면 이메일이 Outlook 메일 서버로 전송됩니다. 이 구간에서 SMTP를 사용할 수 있습니다.
+- Outlook 서버가 DNS에서 `gmail.com`의 MX 레코드를 조회한 뒤 Gmail 측 메일 서버로 이메일을 전달합니다. 서버 간 통신은 SMTP를 사용합니다.
+- Bob은 Gmail 서버에서 IMAP/POP 등을 이용해 이메일을 가져옵니다.
 
-In traditional mail servers, emails were stored on the local file system. Every email was a separate file.
+전통적인 메일 서버에서는 이메일을 로컬 파일 시스템에 저장하고 이메일 하나를 파일 하나로 보관하는 방식도 사용되었습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/local-dir-storage.png" alt="local-dir-storage" width="500" />
+    <img src="./images/local-dir-storage.png" alt="로컬 디렉터리 저장" width="500" />
 </div>
 
-As the scale grew, disk I/O became a bottleneck. Also, it doesn't satisfy our high availability and reliability requirements.
-Disks can be damaged and server can go down.
+규모가 커지면 디스크 I/O가 병목이 될 수 있으며 하나의 서버나 디스크에 의존하는 구조는 높은 가용성과 신뢰성 요구사항을 충족하기 어렵습니다.
 
-### **Distributed mail servers**
+### **분산 메일 서버**
 
-Distributed mail servers are designed to support modern use-cases and solve modern scalability issues.
+분산 메일 서버는 현대적인 대규모 사용 사례와 확장성 요구사항을 처리하도록 설계합니다.
 
-These servers can still support IMAP/POP for native email clients and SMTP for mail exchange across servers.
+네이티브 이메일 클라이언트를 위해 IMAP/POP을 제공하고 메일 서버 간 교환에는 SMTP를 사용할 수 있습니다.
 
-But for rich web-based mail clients, a RESTful API over HTTP is typically used.
+기능이 풍부한 웹 기반 메일 클라이언트에는 HTTP 기반 RESTful API를 사용할 수 있습니다.
 
-Example APIs:
-- `POST /v1/messages` - sends a message to recipients in To, Cc, Bcc headers.
-- `GET /v1/folders` - returns all folders of an email account
+API 예시:
+- `POST /v1/messages` - To, Cc, Bcc 헤더의 수신자에게 메시지 전송
+- `GET /v1/folders` - 이메일 계정의 모든 폴더 반환
 
-Example response:
+응답 예시:
 
 ```
 [{id: string        Unique folder identifier.
@@ -99,10 +97,10 @@ Example response:
 }]
 ```
 
-- `GET /v1/folders/{:folder_id}/messages` - returns all messages under a folder \w pagination
-- `GET /v1/messages/{:message_id}` - get all information about a particular message
+- `GET /v1/folders/{:folder_id}/messages` - 특정 폴더의 메시지를 페이지네이션으로 반환
+- `GET /v1/messages/{:message_id}` - 특정 메시지의 전체 정보 조회
 
-Example response:
+응답 예시:
 
 ```
 {
@@ -115,122 +113,122 @@ Example response:
 }
 ```
 
-Here's the high-level design of the distributed mail server:
+분산 메일 서버의 상위 수준 설계는 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/high-level-architecture.png" alt="high-level-architecture" width="500" />
+    <img src="./images/high-level-architecture.png" alt="상위 수준 아키텍처" width="500" />
 </div>
 
-- **Webmail** - users use web browsers to send/receive emails
-- **Web servers** - public-facing request/response services used to manage login, signup, user profile, etc.
-- **Real-time servers** - Used for pushing new email updates to clients in real-time. We use websockets for real-time communication but fallback to long-polling for older browsers that don't support them.
-- **Metadata db** - stores email metadata such as subject, body, from, to, etc.
-- **Attachment store** - Object store (eg Amazon S3), suitable for storing large files.
-- **Distributed cache** - We can cache recent emails in Redis to improve UX.
-- **Search store** - distributed document store, used for supporting full-text searches.
+- **웹메일:** 사용자가 웹 브라우저에서 이메일을 송수신합니다.
+- **웹 서버:** 로그인, 회원가입, 사용자 프로필 등 외부 요청/응답 기능을 처리합니다.
+- **실시간 서버:** 새 이메일 정보를 클라이언트에 실시간으로 전달합니다. WebSocket을 사용하고 지원이 어려운 환경에는 롱 폴링을 대안으로 둘 수 있습니다.
+- **메타데이터 DB:** 제목, 본문, 발신자, 수신자 등의 이메일 데이터를 저장합니다.
+- **첨부파일 저장소:** Amazon S3 같은 객체 스토리지로 대용량 파일을 저장합니다.
+- **분산 캐시:** 최근 이메일을 Redis 등에 캐시해 사용자 경험을 개선할 수 있습니다.
+- **검색 저장소:** 전문 검색(full-text search)을 지원하는 분산 문서 검색 저장소입니다.
 
-Here's what the email sending flow looks like:
+이메일 전송 흐름은 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/email-sending-flow.png" alt="email-sending-flow" width="500" />
+    <img src="./images/email-sending-flow.png" alt="이메일 전송 흐름" width="500" />
 </div>
 
-- User writes an email and presses "send". Email is sent to load balancer.
-- Load balancer rate limits excessive mail sends and routes to one of the web servers.
-- Web servers do basic email validation (eg email size) and short-circuits outbound flow if domain is same as sender. But does spam check first.
-- If basic validation passes, email is sent to message queue (attachment is referenced from object store)
-- If basic validation fails, email is sent to error queue
-- SMTP outgoing workers pull messages from outgoing queue, do spam/virus checks and route to destination mail server.
-- Email is stored in the "Sent Emails" folder
+- 사용자가 이메일을 작성하고 "보내기"를 누르면 로드 밸런서로 요청이 전달됩니다.
+- 로드 밸런서 또는 API 계층에서 과도한 이메일 전송을 요청 제한하고 웹 서버 중 하나로 라우팅합니다.
+- 웹 서버는 메시지 크기 같은 기본 검증을 하고, 수신 도메인이 내부 도메인인지 확인할 수 있습니다. 또한 스팸 검사를 수행합니다.
+- 기본 검증을 통과하면 이메일을 메시지 큐에 넣습니다. 첨부파일은 객체 스토리지의 참조로 연결할 수 있습니다.
+- 검증에 실패하면 오류 큐로 보낼 수 있습니다.
+- SMTP 발신 워커가 발신 큐에서 메시지를 가져와 스팸/바이러스 검사 후 대상 메일 서버로 전달합니다.
+- 이메일 사본은 사용자의 "보낸 편지함"에 저장합니다.
 
-We need to also monitor size of outgoing message queue. Growing too large might indicate a problem:
-- Recipient's mail server is unavailable. We can retry sending the email at a later time using exponential backoff.
-- Not enough consumers to handle the load, we might have to scale the consumers.
+발신 메시지 큐 크기도 모니터링해야 합니다. 큐가 계속 증가한다면 다음 문제가 있을 수 있습니다.
+- 수신자의 메일 서버가 사용할 수 없는 상태입니다. 지수 백오프(exponential backoff)를 사용해 나중에 재시도할 수 있습니다.
+- 처리할 컨슈머 수가 부족합니다. 발신 워커를 확장해야 할 수 있습니다.
 
-Here's the email receiving flow:
+이메일 수신 흐름은 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/email-receiving-flkow.png" alt="email-receiving-flow" width="500" />
+    <img src="./images/email-receiving-flkow.png" alt="이메일 수신 흐름" width="500" />
 </div>
 
-- Incoming emails arrive at the SMTP load balancer. Mails are distributed to SMTP servers, where mail acceptance policy is done (eg invalid emails are directly discarded).
-- If attachment of email is too large, we can put it in object store (s3).
-- Mail processing workers do preliminary checks, after which mails are forwarded to storage, cache, object store and real-time servers.
-- Offline users get their new emails once they come back online via HTTP API.
+- 수신 이메일이 SMTP 로드 밸런서에 도착하고 여러 SMTP 서버로 분산됩니다. SMTP 서버는 주소 유효성 등 메일 수신 정책을 적용합니다.
+- 첨부파일이 크면 S3 같은 객체 스토리지에 저장합니다.
+- 메일 처리 워커가 기본 검사를 수행하고 이메일 데이터를 메타데이터 저장소, 캐시, 객체 스토리지, 실시간 서버 등에 전달합니다.
+- 오프라인 사용자는 다시 온라인 상태가 되었을 때 HTTP API를 통해 새 이메일을 가져옵니다.
 
 ---
 
-## Step 3: Design Deep Dive
+## 3단계: 상세 설계
 
-Let's now go deeper into some of the components.
+몇 가지 구성 요소를 더 자세히 살펴봅니다.
 
-### **Metadata database**
+### **메타데이터 데이터베이스**
 
-Here are some of the characteristics of email metadata:
-- headers are usually small and frequently accessed
-- Body size ranges from small to big, but is typically read once
-- Most mail operations are isolated to a single user - eg fetching email, marking as read, searching.
-- Data recency impacts data usage. Users typically read only recent emails
-- Data has high-reliability requirements. Data loss is unacceptable.
+이메일 데이터에는 다음과 같은 특성이 있습니다.
+- 헤더는 보통 작고 자주 접근합니다.
+- 본문 크기는 작을 수도 크기도 하지만 일반적으로 같은 메시지를 반복해서 읽는 빈도는 헤더 조회보다 낮습니다.
+- 대부분의 메일 작업은 특정 사용자 범위에서 이루어집니다. 예: 이메일 조회, 읽음 표시, 검색.
+- 최신성에 따라 접근 빈도가 달라집니다. 사용자는 최근 이메일을 더 자주 읽는 경향이 있습니다.
+- 데이터 신뢰성 요구사항이 높으며 데이터 손실을 허용하기 어렵습니다.
 
-At gmail/outlook scale, the database is typically custom made to reduce input/output operations per second (IOPS).
+Gmail/Outlook 규모에서는 IOPS와 저장 패턴을 최적화하기 위해 전용 또는 크게 커스터마이징된 분산 저장 계층을 사용할 수 있습니다.
 
-Let's consider what database options we have:
-- **Relational database** - we can build indexes for headers and body, but these DBs are typically optimized for small chunks of data.
-- **Distributed object store** - this can be a good option for backup storage, but can't efficiently support searching/marking as read/etc.
-- **NoSQL** - Google BigTable is used by gmail, but it's not open-sourced.
+데이터베이스 선택지를 살펴봅니다.
+- **관계형 데이터베이스:** 헤더와 본문에 인덱스를 만들 수 있지만 초대규모 메일 데이터와 매우 큰 파티션을 직접 확장하려면 추가 설계가 필요합니다.
+- **분산 객체 스토리지:** 백업이나 대용량 본문/첨부 저장에는 적합하지만 검색, 읽음 표시 같은 메타데이터 연산을 직접 지원하기 어렵습니다.
+- **NoSQL:** Google Bigtable 계열처럼 대규모 분산 KV/와이드 컬럼 저장소를 사용할 수 있습니다.
 
-Based on above analysis, very few existing solutions seems to fit our needs perfectly.
-In an interview setting, it's infeasible to design a new distributed database solution, but important to mention characteristics:
-- Single column can be a single-digit MB
-- Strong data consistency
-- Designed to reduce disk I/O
-- Highly available and fault tolerant
-- Should be easy to create incremental backups
+기존 솔루션 하나가 모든 요구사항을 완벽히 만족하기는 어렵습니다.
+인터뷰에서 새로운 분산 데이터베이스 자체를 설계할 필요는 없지만 필요한 특성은 설명할 수 있어야 합니다.
+- 하나의 컬럼 값이 수 MB까지 커질 수 있어야 함
+- 강한 데이터 일관성
+- 디스크 I/O를 줄이도록 설계
+- 높은 가용성과 장애 내성
+- 증분 백업을 쉽게 생성할 수 있어야 함
 
-In order to partition the data, we can use the `user_id` as a partition key, so that one user's data is stored on a single shard.
-This prohibits us from sharing an email with multiple users, but this is not a requirement for this interview.
+데이터 파티셔닝에는 `user_id`를 파티션 키로 사용해 한 사용자의 데이터를 같은 샤드에 모을 수 있습니다.
+이 방식에서는 여러 사용자에게 하나의 물리적 메일 객체를 공유하는 최적화가 제한될 수 있지만 이 인터뷰의 필수 요구사항은 아닙니다.
 
-Let's define the tables:
-- Primary key consists of partition key (data distribution) and clustering key (sorting data)
-- Queries we need to support - get all folders for a user, display all emails for a folder, create/get/delete an email, fetch read/unread email, get conversation threads (bonus)
+필요한 테이블을 정의합니다.
+- 기본 키는 파티션 키(데이터 분산)와 클러스터링 키(정렬)를 조합합니다.
+- 지원할 쿼리: 사용자 폴더 전체 조회, 폴더의 이메일 목록 표시, 이메일 생성/조회/삭제, 읽음/읽지 않음 이메일 조회, 대화 스레드 조회(추가 기능)
 
-Legend for tables to follow:
-
-<div style="margin-left:3rem">
-    <img src="./images/legend.png" alt="legend" width="500" />
-</div>
-
-Here is the folders table:
+아래 표에서 사용하는 기호는 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/folders-table.png" alt="folders-table" width="500" />
+    <img src="./images/legend.png" alt="범례" width="500" />
 </div>
 
-emails table:
+폴더 테이블:
 
 <div style="margin-left:3rem">
-    <img src="./images/emails-table.png" alt="emails-table" width="500" />
+    <img src="./images/folders-table.png" alt="폴더 테이블" width="500" />
 </div>
 
-- email_id is timeuuid which allows sorting based on timestamp when email was created
-
-Attachments are stored in a separate table, identified by filename:
+이메일 테이블:
 
 <div style="margin-left:3rem">
-    <img src="./images/attachments.png" alt="attachments" width="500" />
+    <img src="./images/emails-table.png" alt="이메일 테이블" width="500" />
 </div>
 
-Supporting fetchin read/unread emails is easy in a traditional relational database, but not in Cassandra, since filtering on non-partition/clustering key is prohibited.
-One workaround to fetch all emails in a folder and filter in-memory, but that doesn't work well for a big-enough application.
+- `email_id`에 timeuuid를 사용하면 이메일 생성 시각과 연관된 순서로 정렬하는 데 활용할 수 있습니다.
 
-What we can do is denormalize the emails table into read/unread emails tables:
+첨부파일은 별도 테이블에 저장하고 파일 이름 등의 정보로 식별할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/read-unread-emails.png" alt="read-unread-emails" width="500" />
+    <img src="./images/attachments.png" alt="첨부파일" width="500" />
 </div>
 
-In order to support conversation threads, we can include some headers, which mail clients interpret and use to reconstruct a conversation thread:
+관계형 데이터베이스에서는 읽음/읽지 않음 이메일 필터링을 쉽게 구현할 수 있지만 Cassandra에서는 파티션 키나 클러스터링 키가 아닌 컬럼에 대한 임의 필터링이 비효율적일 수 있습니다.
+폴더의 모든 이메일을 가져온 뒤 메모리에서 필터링하는 방식은 데이터가 커지면 확장성이 떨어집니다.
+
+따라서 읽음/읽지 않음 상태에 맞춰 이메일 테이블을 비정규화한 별도 조회 테이블을 만들 수 있습니다.
+
+<div style="margin-left:3rem">
+    <img src="./images/read-unread-emails.png" alt="읽음 및 읽지 않음 이메일" width="500" />
+</div>
+
+대화 스레드를 지원하려면 메일 클라이언트가 메시지 관계를 재구성할 수 있도록 표준 헤더를 유지합니다.
 
 ```
 {
@@ -242,84 +240,83 @@ In order to support conversation threads, we can include some headers, which mai
 }
 ```
 
-Finally, we'll trade availability for consistency for our distributed database, since it is a hard requirement for this problem.
+이 문제에서는 이메일 데이터의 정확성과 보존을 중요하게 보기 때문에 분산 데이터베이스에서 가용성과 일관성 사이의 트레이드오프가 발생할 때 일관성을 더 강하게 선택할 수 있습니다.
 
-Hence, in the event of a failover or network parititon, sync/update actions will be briefly unavailable to impacted users.
+따라서 장애 조치나 네트워크 파티션 상황에서는 영향을 받은 사용자에게 일부 동기화/갱신 작업이 잠시 제한될 수 있습니다.
 
-### **Email deliverability**
+### **이메일 전달 가능성(Deliverability)**
 
-It is easy to setup a server to send emails, but getting the email to a receiver's inbox is hard, due to spam-protection algorithms.
+이메일을 보내는 서버 자체를 구축하는 것보다 수신자의 실제 받은편지함까지 안정적으로 전달되도록 운영하는 것이 더 어렵습니다. 스팸 방지 시스템과 발신자 평판의 영향을 받기 때문입니다.
 
-If we just setup a new mail server and start sending mails through it, our emails will probably end up in the spam folder.
+새 메일 서버에서 갑자기 대량 발송을 시작하면 수신 서비스가 스팸으로 판단할 가능성이 높아질 수 있습니다.
 
-Here's what we can do to prevent that:
-- **Dedicated IPs** - use dedicated IPs for sending emails, otherwise, recipient servers will not trust you.
-- **Classify emails** - avoid sending marketing emails from the same servers to prevent more important email to be classified as spam
-- **Warm up your IP address** slowly to build a good reputation with big email providers. It takes 2 to 6 weeks to warm up a new IP
-- **Ban spammers** quickly to not deteriorate your reputation
-- **Feedback processing** - setup a feedback loop with ISPs to keep track of complaint rate and ban spam accounts quickly.
-- **Email authentication** - use common techniques to combat phishing such as Sender Policy Framework, DomainKeys Identified Mail, etc.
+이를 완화하기 위한 운영 요소는 다음과 같습니다.
+- **전용 IP:** 대량 발송에서는 발신 평판을 독립적으로 관리하기 위해 전용 IP를 사용할 수 있습니다.
+- **이메일 유형 분리:** 마케팅 메일과 트랜잭션 메일을 같은 발송 풀에서 무분별하게 보내지 않고 목적별로 분리해 중요한 메일의 평판 영향을 줄일 수 있습니다.
+- **IP 워밍업:** 새 IP의 발송량을 점진적으로 늘려 주요 이메일 사업자에게 평판을 형성합니다. 원문에서는 일반적으로 2~6주 정도의 워밍업 기간을 예시로 듭니다.
+- **스팸 발송자 차단:** 악용 계정을 빠르게 차단해 발신 도메인/IP 평판 악화를 줄입니다.
+- **피드백 처리:** ISP의 피드백 루프 등을 이용해 스팸 신고율을 추적하고 악용 계정을 제어합니다.
+- **이메일 인증:** SPF(Sender Policy Framework), DKIM(DomainKeys Identified Mail) 등 표준 인증 기술을 사용해 피싱과 발신자 위조를 방어합니다.
 
-You don't need to remember all of this. Just know that building a good mail server requires a lot of domain knowledge.
+모든 세부 사항을 암기할 필요는 없지만 안정적인 메일 서비스에는 상당한 도메인 지식과 운영 경험이 필요하다는 점이 중요합니다.
 
-### **Search**
+### **검색**
 
-Searching includes doing a full-text search based on email contents or more advanced queries based on from, to, subject, unread, etc filters.
+이메일 검색은 본문 전문 검색뿐 아니라 발신자, 수신자, 제목, 읽지 않음 상태 등의 조건을 조합한 검색을 포함합니다.
 
-One characteristic of email search is that it is local to the user and it has more writes than reads, because we need to re-index it on each operation, but users rarely use the search tab.
+이메일 검색은 사용자별 데이터 범위 안에서 수행되는 경우가 많고, 이메일 추가·삭제·상태 변경 때 인덱스를 갱신해야 하므로 검색 요청보다 인덱스 쓰기가 상대적으로 많을 수 있습니다.
 
-Let's compare google search with email search:
+Google 검색과 이메일 검색을 비교하면 다음과 같습니다.
 
-|               | Scope                | Sorting                               | Accuracy                                          |
-|---------------|----------------------|---------------------------------------|---------------------------------------------------|
-| Google search | The whole internet   | Sort by relevance                     | Indexing takes some time, so not instant results. |
-| Email search  | User's own email box | Sort by attributes eg time, date, etc | Indexing should be quick and results accurate.    |
+| | 범위 | 정렬 | 정확성/최신성 |
+|---|---|---|---|
+| Google 검색 | 전체 인터넷 | 관련성 기준 | 색인에 시간이 필요하므로 즉시 반영되지 않을 수 있음 |
+| 이메일 검색 | 사용자의 메일함 | 시간, 날짜 등 속성 기준 | 새 이메일과 변경 사항이 빠르게 색인되고 정확히 검색되어야 함 |
 
-To achieve this search functionality, one option is to use an Elasticsearch cluster. We can use `user_id` as the partition key to group data under the same node:
+이 기능을 구현하는 한 가지 방법은 Elasticsearch 클러스터를 사용하는 것입니다. `user_id`를 파티션/라우팅 기준으로 사용해 같은 사용자의 데이터를 같은 검색 노드 또는 샤드 범위에 모을 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/elasticsearch.png" alt="elasticsearch" width="500" />
+    <img src="./images/elasticsearch.png" alt="Elasticsearch" width="500" />
 </div>
 
-Mutating operations are async via Kafka in order to decouple services from the reindexing flow.
-Actually searching for data happens synchronously.
+인덱스 변경 작업은 Kafka를 사용해 비동기 처리하면 메일 저장 서비스와 재색인 흐름의 결합도를 낮출 수 있습니다.
+실제 검색 요청은 동기적으로 처리합니다.
 
-Elasticsearch is one of the most popular search-engine databases and supports full-text search for emails very well.
+Elasticsearch는 널리 사용되는 검색 엔진으로 이메일 전문 검색과 다양한 필터 쿼리를 지원하는 데 적합합니다.
 
-Alternatively, we can attempt to develop our own custom search solution to meet our specific requirements.
+대안으로 이메일 특성에 최적화된 자체 검색 엔진을 개발할 수도 있습니다.
 
-Designing such a system is out of scope. One of the core challenges when building it is to optimize it for write-heavy workloads.
+자체 검색 시스템 전체를 설계하는 것은 이 장의 범위를 벗어나지만, 핵심 과제 중 하나는 쓰기 중심 워크로드를 효율적으로 처리하는 것입니다.
 
-To achieve that, we can use Log-Structured Merge-Trees (LSM) to structure the index data on disk. Write path is optimized for sequential writes only.
-This technique is used in Cassandra, BigTable and RocksDB.
+이를 위해 LSM(Log-Structured Merge-Tree)을 사용해 디스크 인덱스를 구성할 수 있습니다. 쓰기 경로를 주로 순차 쓰기로 최적화하는 방식이며 Cassandra, Bigtable, RocksDB 등에서 관련 구조를 사용합니다.
 
-Its core idea is to store data in-memory until a predefined threshold is reached, after which it is merged in the next layer (disk):
+핵심 아이디어는 데이터를 먼저 메모리에 저장하고 일정 임계값에 도달하면 다음 계층인 디스크 구조로 병합하는 것입니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/lsm-tree.png" alt="lsm-tree" width="500" />
+    <img src="./images/lsm-tree.png" alt="LSM Tree" width="500" />
 </div>
 
-Main trade-offs between the two approaches:
-- Elasticsearch scales to some extent, whereas a custom search engine can be fine-tuned for the email use-case, allowing it to scale further.
-- Elasticsearch is a separate service we need to maintain, alongside the metadata store. A custom solution can be the datastore itself.
-- Elasticsearch is an off-the-shelf solution, whereas the custom search engine would require significant engineering effort to build.
+두 접근 방식의 주요 트레이드오프는 다음과 같습니다.
+- Elasticsearch는 검증된 범용 검색 시스템으로 상당한 규모까지 확장할 수 있습니다. 자체 검색 엔진은 이메일 워크로드에 더 강하게 최적화할 수 있습니다.
+- Elasticsearch를 사용하면 메타데이터 저장소 외에 별도 검색 클러스터를 운영해야 합니다. 자체 솔루션은 저장소와 검색 인덱스를 더 밀접하게 통합할 수도 있습니다.
+- Elasticsearch는 즉시 사용할 수 있는 기존 솔루션인 반면 자체 검색 엔진을 구축하려면 상당한 개발 비용이 필요합니다.
 
-### **Scalability and availability**
+### **확장성과 가용성**
 
-Since individual user operations don't collide with other users, most components can be independently scaled.
+사용자 한 명의 작업이 다른 사용자의 데이터와 충돌하는 경우가 많지 않으므로 대부분의 구성 요소를 사용자 기준으로 파티셔닝하고 독립적으로 확장할 수 있습니다.
 
-To ensure high availability, we can also use a multi-DC setup with leader-folower failover in case of failures:
+높은 가용성을 위해 여러 데이터 센터를 사용하고 장애 시 리더-팔로워 장애 조치를 수행하는 구성도 사용할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/multi-dc-example.png" alt="multi-dc-example" width="500" />
+    <img src="./images/multi-dc-example.png" alt="다중 데이터 센터 예시" width="500" />
 </div>
 
 ---
 
-## Step 4: Wrap Up
+## 4단계: 마무리
 
-Additional talking points:
-- **Fault tolerance** - Many parts of the system could fail. It is worthwhile how we'd handle node failures.
-- **Compliance** - PII needs to be stored in a reasonable way, given Europe's GDPR laws.
-- **Security** - email encryption, phishing protection, safe browsing, etc.
-- **Optimizations** - eg preventing duplication of the same attachments, sent multiple times by different users.
+추가로 논의할 수 있는 주제는 다음과 같습니다.
+- **장애 내성:** 시스템의 여러 구성 요소가 실패할 수 있으므로 노드 장애와 복구 전략을 설계해야 합니다.
+- **규정 준수:** GDPR 등 개인정보 보호 규정을 고려해 PII를 적절하게 저장하고 처리해야 합니다.
+- **보안:** 이메일 암호화, 피싱 방지, 안전한 링크 탐색 등의 기능을 고려합니다.
+- **최적화:** 여러 사용자가 동일한 첨부파일을 반복 전송할 때 콘텐츠 해시 기반 중복 제거 등을 고려할 수 있습니다.

@@ -1,78 +1,77 @@
-# Chapter 25: Real-time Gaming Leaderboard
+# 25장: 실시간 게임 리더보드
 
-## Introduction
+## 소개
 
-We are going to design a **leaderboard** for an online mobile game:
+온라인 모바일 게임의 **리더보드(leaderboard)**를 설계합니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/leaderboard.png" alt="leaderboard" width="500" />
+    <img src="./images/leaderboard.png" alt="리더보드" width="500" />
 </div>
 
 ---
 
-## Step 1: Understand the Problem and Establish Design Scope
+## 1단계: 문제 이해 및 설계 범위 설정
 
-- C: How is the score calculated for the leaderboard?
-- I: User gets a point whenever they win a match.
-- C: Are all players included in the leaderboard?
-- I: Yes
-- C: Is there a time segment, associated with the leaderboard?
-- I: Each month, a new tournament starts which starts a new leaderboard.
-- C: Can we assume we only care about top 10 users?
-- I: We want to display top 10 users, along with position of specific user. If time permits, we can discuss showing users around particular user in the leaderboard.
-- C: How many users are in a tournament?
-- I: 5mil DAU and 25mil MAU
-- C: How many matches are played on average during a tournament?
-- I: Each player plays 10 matches per day on average
-- C: How do we determine the rank if two players have the same score?
-- I: Their rank is the same in that case. If time permits, we can discuss breaking ties.
-- C: Does the leaderboard need to be real-time?
-- I: Yes, we want to present real-time results or as close as possible to real-time. It is not okay to present batched result history.
+- C: 리더보드 점수는 어떻게 계산하는가?
+- I: 사용자가 경기에서 이길 때마다 1점을 얻는다.
+- C: 모든 플레이어가 리더보드에 포함되는가?
+- I: 그렇다.
+- C: 리더보드는 특정 기간 단위로 초기화되는가?
+- I: 매월 새 토너먼트가 시작되고 새 리더보드가 생성된다.
+- C: 상위 10명만 중요하다고 가정해도 되는가?
+- I: 상위 10명을 보여주고 특정 사용자의 순위도 표시해야 한다. 시간이 허용되면 해당 사용자 위아래의 플레이어도 보여주는 기능을 논의한다.
+- C: 토너먼트 사용자는 몇 명인가?
+- I: DAU 500만 명, MAU 2,500만 명이다.
+- C: 토너먼트에서 평균적으로 몇 경기를 플레이하는가?
+- I: 플레이어 한 명이 하루 평균 10경기를 한다.
+- C: 두 플레이어의 점수가 같으면 순위는 어떻게 정하는가?
+- I: 같은 점수면 같은 순위로 처리한다. 시간이 허용되면 동점 처리 방식도 논의한다.
+- C: 리더보드는 실시간이어야 하는가?
+- I: 그렇다. 실시간 또는 가능한 한 실시간에 가까운 결과를 보여줘야 하며 배치된 과거 결과만 보여주는 것은 허용하지 않는다.
 
-### **Functional requirements**
+### **기능 요구사항**
 
-- Display top 10 players on leaderboard
-- Show a user's specific rank
-- Display users which are four places above and below given user (bonus)
+- 리더보드 상위 10명 표시
+- 특정 사용자의 순위 표시
+- 특정 사용자 기준 위 4명과 아래 4명 표시(추가 기능)
 
-### **Non-functional requirements**
+### **비기능 요구사항**
 
-- Real-time updates on scores
-- Score update is reflected on the leaderboard in real-time
-- General scalability, availability, reliability
+- 점수의 실시간 갱신
+- 점수 변경이 리더보드에 가능한 한 즉시 반영되어야 함
+- 일반적인 확장성, 가용성, 신뢰성 요구사항
 
-### **Back-of-the-envelope estimation**
+### **개략적 규모 추정**
 
-With 50mil DAU, if the game has an even distribution of players during a 24h period, we'd have an average of 50 users per second.
-However, since distribution is typically uneven, we can estimate that the peak online users would be 250 users per second.
+원문에서는 피크 부하를 설명하기 위해 초당 온라인 사용자 수와 경기 수를 추정합니다. 사용자 분포가 하루 동안 균등하지 않으므로 평균보다 높은 피크를 고려해야 합니다.
 
-QPS for users scoring a point - given 10 games per day on average, 50 users/s * 10 = 500 QPS. Peak QPS = 2500.
+사용자가 하루 평균 10경기를 하고 승리 시 점수가 갱신된다고 가정하면 점수 갱신 QPS는 수백~수천 수준의 피크가 발생할 수 있습니다. 원문 예시에서는 평균 500 QPS, 피크 2,500 QPS를 사용합니다.
 
-QPS for fetching the top 10 leaderboard - assuming users open that once a day on average, QPS is 50.
+사용자가 하루 평균 한 번 리더보드를 조회한다고 가정하면 상위 10명 조회 QPS는 점수 갱신보다 훨씬 낮습니다.
 
 ---
 
-## Step 2: Propose High-Level Design and Get Buy-In
+## 2단계: 상위 수준 설계 제안 및 합의
 
-### **API Design**
+### **API 설계**
 
-The first API we need is one to update a user's score:
+사용자 점수를 갱신하는 API가 필요합니다.
 
 ```
 POST /v1/scores
 ```
 
-This API takes two params - `user_id` and `points` scored for winning a game.
+이 API는 `user_id`와 경기 승리로 획득한 `points`를 받습니다.
 
-This API should only be accessible to game servers, not end clients.
+점수 조작을 방지하기 위해 최종 클라이언트가 아니라 신뢰할 수 있는 게임 서버만 호출할 수 있어야 합니다.
 
-Next one is for getting the top 10 players of the leaderboard:
+리더보드 상위 10명을 조회하는 API는 다음과 같습니다.
 
 ```
 GET /v1/scores
 ```
 
-Example response:
+응답 예시:
 
 ```
 {
@@ -95,13 +94,13 @@ Example response:
 }
 ```
 
-You can also get the score of a particular user:
+특정 사용자의 점수와 순위도 조회할 수 있습니다.
 
 ```
 GET /v1/scores/{:user_id}
 ```
 
-Example response:
+응답 예시:
 
 ```
 {
@@ -113,77 +112,74 @@ Example response:
 }
 ```
 
-### **High-level architecture**
+### **상위 수준 아키텍처**
 
 <div style="margin-left:3rem">
-    <img src="./images/high-level-architecture.png" alt="high-level-architecture" width="500" />
+    <img src="./images/high-level-architecture.png" alt="상위 수준 아키텍처" width="500" />
 </div>
 
-- When a player wins a game, client sends a request to the game service
-- Game service validates if win is valid and calls the leaderboard service to update the player's score
-- Leaderboard service updates the user's score in the leaderboard store
-- Player makes a call to leaderboard service to fetch leaderboard data, eg top 10 players and given player's rank
+- 플레이어가 경기에서 이기면 클라이언트가 게임 서비스에 요청을 보냅니다.
+- 게임 서비스가 승리 결과가 유효한지 검증하고 리더보드 서비스에 점수 갱신을 요청합니다.
+- 리더보드 서비스가 리더보드 저장소의 사용자 점수를 갱신합니다.
+- 플레이어가 리더보드 서비스에 요청해 상위 10명이나 자신의 순위를 가져옵니다.
 
-An alternative design which was considered is the client updating their score directly within the leaderboard service:
+클라이언트가 리더보드 서비스에 직접 점수를 기록하는 대안도 생각할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/alternative-design.png" alt="alternative-design" width="500" />
+    <img src="./images/alternative-design.png" alt="대안 설계" width="500" />
 </div>
 
-This option is not secure as it's susceptible to man-in-the-middle attacks. Players can put a proxy and change their score as they please.
+하지만 클라이언트가 점수를 직접 제출하도록 하면 조작된 요청을 보내기 쉬워 보안상 적합하지 않습니다. 점수의 진실 공급원(source of truth)은 게임 서버의 검증된 경기 결과여야 합니다.
 
-One additional caveat is that for games, where the game logic is managed by the server, cliets don't need to call the server explicitly to record their win.
-Servers do it automatically for them based on the game logic.
+게임 로직을 서버에서 완전히 관리하는 게임이라면 클라이언트가 승리 기록 API를 명시적으로 호출할 필요도 없습니다. 서버가 게임 상태를 기반으로 결과를 판단하고 자동으로 리더보드를 갱신할 수 있습니다.
 
-One additional consideration is whether we should put a message queue between the game server and the leaderboard service. This would be useful if other services are interested in game results, but that is not an explicit requirement in the interview so far, hence it's not included in the design:
+게임 서버와 리더보드 서비스 사이에 메시지 큐를 넣는 것도 고려할 수 있습니다. 경기 결과를 업적, 분석, 알림 등 다른 서비스도 사용해야 한다면 이벤트 기반 구조가 유용합니다. 현재 요구사항에는 필수적이지 않으므로 기본 설계에는 포함하지 않습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/message-queue-based-comm.png" alt="message-queue-based-comm" width="500" />
+    <img src="./images/message-queue-based-comm.png" alt="메시지 큐 기반 통신" width="500" />
 </div>
 
-### **Data models**
+### **데이터 모델**
 
-Let's discuss the options we have for storing leaderboard data - relational DBs, Redis, NoSQL.
+리더보드 저장 방식으로 관계형 DB, Redis, NoSQL을 비교합니다.
 
-The NoSQL solution is discussed in the deep dive section.
+NoSQL 방식은 상세 설계에서 다룹니다.
 
-#### Relational database solution
+#### 관계형 데이터베이스 방식
 
-If the scale doesn't matter and we don't have that many users, a relational DB serves our quite well.
+사용자 수가 적고 규모 요구사항이 크지 않다면 관계형 데이터베이스로도 충분히 구현할 수 있습니다.
 
-We can start from a simple leaderboard table, one for each month (personal note - this doesn't make sense. You can just add a `month` column and avoid the headache of maintaining new tables each month):
+단순한 리더보드 테이블에서 시작할 수 있습니다. 원문은 월별 테이블을 예시로 들지만 실제 구현에서는 `month`나 `tournament_id` 같은 컬럼으로 여러 시즌을 하나의 스키마에서 관리할 수도 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/leaderboard-table.png" alt="leaderboard-table" width="500" />
+    <img src="./images/leaderboard-table.png" alt="리더보드 테이블" width="500" />
 </div>
 
-There is additional data to include in there, but that is irrelevant to the queries we'd run, so it's omitted.
+리더보드 핵심 쿼리와 관계없는 부가 데이터는 생략합니다.
 
-What happens when a user wins a point?
+사용자가 1점을 얻으면 다음처럼 처리할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/user-wins-point.png" alt="user-wins-point" width="500" />
+    <img src="./images/user-wins-point.png" alt="사용자 점수 획득" width="500" />
 </div>
 
-If a user doesn't exist in the table yet, we need to insert them first:
+테이블에 사용자가 없다면 먼저 삽입합니다.
 
 ```
 INSERT INTO leaderboard (user_id, score) VALUES ('mary1934', 1);
 ```
 
-On subsequent calls, we'd just update their score:
+이후에는 점수를 증가시킵니다.
 
 ```
 UPDATE leaderboard set score=score + 1 where user_id='mary1934';
 ```
 
-How do we find the top players of a leaderboard?
+상위 플레이어를 찾는 기본 방식은 다음과 같습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/find-leaderboard-position.png" alt="find-leaderboard-position" width="500" />
+    <img src="./images/find-leaderboard-position.png" alt="리더보드 순위 조회" width="500" />
 </div>
-
-We can run the following query:
 
 ```
 SELECT (@rownum := @rownum + 1) AS rank, user_id, score
@@ -191,9 +187,9 @@ FROM leaderboard
 ORDER BY score DESC;
 ```
 
-This is not performant though as it makes a table scan to order all records in the database table.
+모든 레코드를 정렬해야 하므로 대규모 데이터에서는 비효율적입니다.
 
-We can optimize it by adding an index on `score` and using the `LIMIT` operation to avoid scanning everything:
+`score`에 인덱스를 만들고 `LIMIT`을 사용하면 상위 N명 조회는 개선할 수 있습니다.
 
 ```
 SELECT (@rownum := @rownum + 1) AS rank, user_id, score
@@ -202,39 +198,38 @@ ORDER BY score DESC
 LIMIT 10;
 ```
 
-This approach, however, doesn't scale well if the user is not at the top of the leaderboard and you'd want to locate their rank.
+하지만 사용자가 상위권이 아닐 때 특정 사용자의 전체 순위를 계산하는 것은 여전히 비용이 큽니다.
 
-#### Redis solution
+#### Redis 방식
 
-We want to find a solution, which works well even for millions of players without having to fallback on complex database queries.
+수백만 명의 플레이어에서도 복잡한 SQL 없이 빠르게 동작하는 저장 구조가 필요합니다.
 
-Redis is an in-memory data store, which is fast as it works in-memory and has a suitable data structure to serve our needs - sorted set.
+Redis는 인메모리 데이터 저장소이며 이 요구사항에 적합한 **Sorted Set** 자료구조를 제공합니다.
 
-A sorted set is a data structure similar to sets in programming languages, which allows you to keep a data structure sorted by a given criteria.
-Internally, it is implemented using a hash-map to maintain mapping between key (user_id) and value (score) and a skip list which maps scores to users in sorted order:
-
-<div style="margin-left:3rem">
-    <img src="./images/sorted-set.png" alt="sorted-set" width="500" />
-</div>
-
-How does a skip list work?
-- It is a linked list which allows for fast search
-- It consists of a sorted linked list and multi-level indexes
+Sorted Set은 각 멤버와 점수(score)를 저장하고 점수 기준으로 정렬된 상태를 유지합니다.
+내부적으로 멤버와 점수 매핑을 위한 해시 구조와 점수 순서를 위한 Skip List 등의 구조를 조합해 구현할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/skip-list.png" alt="skip-list" width="500" />
+    <img src="./images/sorted-set.png" alt="Sorted Set" width="500" />
 </div>
 
-This structure enables us to quickly search for specific values when the data set is large enough.
-In the example below (64 nodes), it requires traversing 62 nodes in a base linked list to find the given value and 11 nodes in the skip-list case:
+Skip List는 어떻게 동작할까요?
+- 정렬된 연결 리스트를 기반으로 빠른 검색을 위한 여러 수준의 인덱스를 둡니다.
+- 상위 레벨 포인터를 이용해 많은 노드를 건너뛰면서 탐색할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/skip-list-performance.png" alt="skip-list-performance" width="500" />
+    <img src="./images/skip-list.png" alt="Skip List" width="500" />
 </div>
 
-Sorted sets are more performant than relational databases as the data is kept sorted at all times at the price of O(logN) add and find operation.
+데이터가 커질수록 기본 연결 리스트를 순차 탐색하는 것보다 훨씬 적은 노드 방문으로 값을 찾을 수 있습니다.
 
-In contract, here's an example nested query we need to run to find the rank of a given user in a relational DB:
+<div style="margin-left:3rem">
+    <img src="./images/skip-list-performance.png" alt="Skip List 성능" width="500" />
+</div>
+
+Sorted Set은 데이터를 항상 정렬 상태로 유지하며 추가와 탐색에 일반적으로 `O(logN)` 수준의 비용을 사용합니다.
+
+반대로 관계형 DB에서 특정 사용자의 순위를 단순 쿼리로 계산하면 다음처럼 더 높은 점수를 가진 행의 수를 세는 중첩 쿼리가 필요할 수 있습니다.
 
 ```
 SELECT *,(SELECT COUNT(*) FROM leaderboard lb2
@@ -243,195 +238,188 @@ FROM leaderboard lb1
 WHERE lb1.user_id = {:user_id};
 ```
 
-What operations do we need to operate our leaderboard in Redis?
-- **ZADD** - insert the user into the set if they don't exist. Otherwise, update the score. O(logN) time complexity.
-- **ZINCRBY** - increment the score of a user by given amount. If user doesn't exist, score starts at zero. O(logN) time complexity.
-- **ZRANGE/ZREVRANGE** - fetch a range of users, sorted by their score. We can specify order (ASC/DESC), offset and result size. O(logN+M) time complexity where M is result size.
-- **ZRANK/ZREVRANK** - Fetch the position (rank) of given user in ASC/DESC order. O(logN) time complexity.
+Redis 리더보드에 필요한 주요 연산은 다음과 같습니다.
+- **ZADD:** 사용자가 없으면 추가하고 있으면 점수를 갱신합니다. 일반적으로 `O(logN)`.
+- **ZINCRBY:** 사용자의 점수를 지정한 값만큼 증가시킵니다. 사용자가 없으면 0에서 시작합니다. 일반적으로 `O(logN)`.
+- **ZRANGE/ZREVRANGE:** 점수 순서로 사용자 범위를 가져옵니다. 정렬 방향, 범위, 결과 개수를 지정할 수 있습니다.
+- **ZRANK/ZREVRANK:** 특정 사용자의 오름차순/내림차순 순위를 조회합니다.
 
-What happens when a user scores a point?
+사용자가 1점을 획득하면 다음과 같이 실행할 수 있습니다.
 
 ```
 ZINCRBY leaderboard_feb_2021 1 'mary1934'
 ```
 
-There's a new leaderboard created every month while old ones are moved to historical storage.
+매월 새 리더보드를 생성하고 지난 리더보드는 이력 저장소로 이동할 수 있습니다.
 
-What happens when a user fetches top 10 players?
+상위 10명을 조회하는 예:
 
 ```
 ZREVRANGE leaderboard_feb_2021 0 9 WITHSCORES
 ```
 
-Example result:
+응답 예:
 
 ```
 [(user2,score2),(user1,score1),(user5,score5)...]
 ```
 
-What about user fetching their leaderboard position?
+특정 사용자 주변 순위를 가져오는 경우:
 
 <div style="margin-left:3rem">
-    <img src="./images/leaderboard-position-of-user.png" alt="leaderboard-position-of-user" width="500" />
+    <img src="./images/leaderboard-position-of-user.png" alt="사용자 리더보드 위치" width="500" />
 </div>
 
-This can be easily achieved by the following query, given that we know a user's leaderboard position:
+사용자의 순위를 알고 있다면 해당 순위 주변 범위를 조회할 수 있습니다.
 
 ```
 ZREVRANGE leaderboard_feb_2021 357 365
 ```
 
-A user's position can be fetched using `ZREVRANK <user-id>`.
+사용자 순위는 `ZREVRANK <user-id>`로 가져올 수 있습니다.
 
-Let's explore what our storage requirements are:
-- Assuming worst-case scenario of all 25mil MAU participating in the game for a given month
-- ID is 24-character string and score is 16-bit integer, we need 26 bytes * 25mil = ~650MB of storage
-- Even if we double the storage cost due to the overhead of the skip list, this would still easily fit in a modern redis cluster
+저장 공간을 추정해 봅니다.
+- 한 달 동안 최악의 경우 MAU 2,500만 명이 모두 참여한다고 가정합니다.
+- 사용자 ID가 24바이트 문자열이고 점수가 16비트 정수라면 최소 데이터 크기는 대략 26바이트 × 2,500만 ≈ 650MB입니다.
+- Sorted Set 내부 자료구조 오버헤드를 고려해 실제 메모리는 더 많이 필요하지만 현대적인 Redis 클러스터에서 충분히 관리 가능한 규모입니다.
 
-Another non-functional requirement to consider is supporting 2500 updates per second. This is well within a single Redis server's capabilities.
+초당 2,500건의 점수 갱신도 단일 Redis 서버의 일반적인 처리 능력 범위 안에 들어갈 수 있지만 실제 용량 계획은 명령 종류와 하드웨어를 기준으로 벤치마킹해야 합니다.
 
-Additional caveats:
-- We can spin up a Redis replica to avoid losing data when a redis server crashes
-- We can still leverage Redis persistence to not lose data in the event of a crash
-- We'll need two supporting tables in MySQL to fetch user details such as username, display name, etc as well as store when eg a user won a game
-- The second table in MySQL can be used to reconstruct leaderboard when there is an infrastructure failure
-- As a small performance optimization, we could cache the user details of top 10 players as they'd be frequently accessed
+추가 고려 사항:
+- Redis 서버 장애 시 데이터 손실을 줄이기 위해 복제본을 구성합니다.
+- Redis Persistence(RDB/AOF 등)를 사용해 장애 복구에 활용할 수 있습니다.
+- 사용자 이름, 표시 이름 등 프로필 정보와 경기 승리 이력을 저장하기 위해 MySQL 같은 별도 저장소를 사용할 수 있습니다.
+- 경기 결과 이력은 대규모 장애 후 리더보드를 재구성하는 원본 데이터로 활용할 수 있습니다.
+- 상위 10명 사용자 프로필은 자주 조회되므로 캐시할 수 있습니다.
 
 ---
 
-## Step 3: Design Deep Dive
+## 3단계: 상세 설계
 
-### **To use a cloud provider or not**
+### **클라우드 사업자를 사용할 것인가?**
 
-We can either choose to deploy and manage our own services or use a cloud provider to manage them for us.
+서비스를 직접 배포하고 운영할 수도 있고 관리형 클라우드 서비스를 사용할 수도 있습니다.
 
-If we choose to manage the services our selves, we'll use redis for leaderboard data, mysql for user profile and potentially a cache for user profile if we want to scale the database:
-
-<div style="margin-left:3rem">
-    <img src="./images/manage-services-ourselves.png" alt="manage-services-ourselves" width="500" />
-</div>
-
-Alternatively, we could use cloud offerings to manage a lot of the services for us. For example, we can use AWS API Gateway to route API calls to AWS Lambda functions:
+직접 운영한다면 Redis에 리더보드 데이터를 저장하고 MySQL에 사용자 프로필을 저장하며 필요하면 사용자 프로필 캐시를 추가할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/api-gateway-mapping.png" alt="api-gateway-mapping" width="500" />
+    <img src="./images/manage-services-ourselves.png" alt="직접 서비스 운영" width="500" />
 </div>
 
-AWS Lambda enables us to run code without managing or provisioning servers ourselves. It runs only when needed and scales automatically.
-
-Exmaple user scoring a point:
+대안으로 AWS 같은 클라우드의 관리형 서비스를 사용할 수 있습니다. 예를 들어 AWS API Gateway가 API 요청을 AWS Lambda 함수에 라우팅하도록 구성할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/user-scoring-point-lambda.png" alt="user-scoring-point-lambda" width="500" />
+    <img src="./images/api-gateway-mapping.png" alt="API Gateway 매핑" width="500" />
 </div>
 
-Example user retrieving leaderboard:
+AWS Lambda 같은 서버리스 컴퓨팅은 서버를 직접 프로비저닝하거나 관리하지 않고 코드를 실행할 수 있으며 요청량에 따라 실행 인스턴스를 자동으로 확장할 수 있습니다.
+
+사용자가 점수를 얻는 흐름 예시:
 
 <div style="margin-left:3rem">
-    <img src="./images/user-retrieve-leaderboard.png" alt="user-retrieve-leaderboard" width="500" />
+    <img src="./images/user-scoring-point-lambda.png" alt="Lambda 점수 갱신" width="500" />
 </div>
 
-Lambdas are an implementation of a serverless architecture. We don't need to manage scaling and environment setup.
-
-Author recommends going with this approach if we build the game from the ground up.
-
-### **Scaling Redis**
-
-With 5mil DAU, we can get away with a single Redis instance from both a storage and QPS perspective.
-
-However, if we imagine userbase grows 10x to 500mil DAU, then we'd need 65gb for storage and QPS goes to 250k.
-
-Such scale would require sharding.
-
-One way to achieve it is by range-partitioning the data:
+리더보드 조회 예시:
 
 <div style="margin-left:3rem">
-    <img src="./images/range-partition.png" alt="range-partition" width="500" />
+    <img src="./images/user-retrieve-leaderboard.png" alt="리더보드 조회" width="500" />
 </div>
 
-In this example, we'll shard based on user's score. We'll maintain the mapping between user_id and shard in application code.
-We can do that either via MySQL or another cache for the mapping itself.
+서버리스 아키텍처를 사용하면 인프라 프로비저닝과 일부 확장 작업을 클라우드 사업자에게 맡길 수 있습니다. 새 게임을 처음부터 만든다면 운영 부담과 비용 모델을 비교해 선택할 수 있습니다.
 
-To fetch the top 10 players, we'd query the shard with the highest scores (`[900-1000]`).
+### **Redis 확장**
 
-To fetch a user's rank, we'll need to calculate the rank within the user's shard and add up all users with higher scores in other shards.
-The latter is a O(1) operation as total records per shard can quickly be accessed via the info keyspace command.
+DAU 500만 명 수준에서는 저장 공간과 QPS 측면에서 단일 Redis 인스턴스 또는 작은 클러스터로 시작할 수 있습니다.
 
-Alternatively, we can use hash partitioning via Redis Cluster. It is a proxy which distributes data across redis nodes based on partitioning similar to consistent hashing, but not exactly the same:
+사용자 수가 10배 이상 증가해 저장 공간과 QPS가 크게 늘어나면 샤딩이 필요할 수 있습니다.
+
+한 가지 방법은 점수 범위를 기준으로 데이터를 나누는 범위 파티셔닝입니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/hash-partition.png" alt="hash-partition" width="500" />
+    <img src="./images/range-partition.png" alt="범위 파티셔닝" width="500" />
 </div>
 
-Calculating the top 10 players is challenging with this setup. We'll need to get the top 10 players of each shard and merge the results in the application:
+이 예에서는 사용자의 점수에 따라 샤드를 결정합니다. `user_id`와 샤드 간 매핑은 애플리케이션이나 별도 MySQL/캐시에 저장할 수 있습니다.
+
+상위 10명을 조회할 때 가장 높은 점수 범위 샤드부터 조회합니다.
+
+특정 사용자의 전체 순위는 사용자 자신의 샤드 안의 순위를 계산하고, 그보다 높은 점수 범위 샤드에 있는 전체 사용자 수를 더해 계산할 수 있습니다.
+
+대안은 Redis Cluster를 사용해 해시 기반으로 데이터를 분산하는 것입니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/top-10-players-calculation.png" alt="top-10-players-calculation" width="500" />
+    <img src="./images/hash-partition.png" alt="해시 파티셔닝" width="500" />
 </div>
 
-There are some limitations with the hash partitioning:
-- If we need to fetch top K users, where K is high, latency can increase as we'll need to fetch a lot of data from all the shards
-- Latency increases as the number of partitions grows
-- There is no straightforward approach to determine a user's rank
-
-Due to all this, the author leans towards using fixed partitions for this problem.
-
-Other caveats:
-- A best practice is to allocate twice as much memory as required for write-heavy redis nodes to accommodate snapshots if required
-- We can use a tool called Redis-benchmark to track the performance of a redis setup and make data-driven decisions
-
-### **Alternative solution: NoSQL**
-
-An alternative solution to consider is using an appropriate NoSQL database optimized for:
-- heavy writes
-- effectively sorting items within the same partition by score
-
-DynamoDB, Cassandra or MongoDB are all good fits.
-
-In this chapter, the author has decided to use DynamoDB. It is a fully-managed NoSQL database, which offers reliable performance and great scalability.
-It also enables usage of global secondary indexes when we need to query fields not part of the primary key.
+이 구성에서는 상위 10명 계산이 더 복잡해집니다. 각 샤드에서 상위 후보를 가져온 뒤 애플리케이션에서 병합해야 합니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/dynamo-db.png" alt="dynamo-db" width="500" />
+    <img src="./images/top-10-players-calculation.png" alt="상위 10명 계산" width="500" />
 </div>
 
-Let's start from a table for storing a leaderboard for a chess game:
+해시 파티셔닝의 한계는 다음과 같습니다.
+- 상위 K에서 K가 크면 모든 샤드에서 많은 데이터를 가져와야 하므로 지연 시간이 커집니다.
+- 파티션 수가 늘어날수록 scatter-gather 비용이 증가합니다.
+- 특정 사용자의 전역 순위를 바로 계산하기 어렵습니다.
+
+이 문제에서는 점수 범위가 비교적 명확하다면 범위 기반 고정 파티션을 고려할 수 있습니다.
+
+추가 고려 사항:
+- 쓰기 중심 Redis 노드는 스냅샷이나 fork 시점의 메모리 사용을 고려해 여유 메모리를 확보해야 합니다.
+- `redis-benchmark` 같은 도구로 실제 워크로드와 유사한 조건에서 성능을 측정해 용량을 결정할 수 있습니다.
+
+### **대안: NoSQL**
+
+다음 특성에 최적화된 NoSQL 데이터베이스도 고려할 수 있습니다.
+- 높은 쓰기 처리량
+- 같은 파티션 안에서 점수 기준 정렬을 효율적으로 수행
+
+DynamoDB, Cassandra, MongoDB 등이 후보가 될 수 있습니다.
+
+이 장에서는 DynamoDB를 예로 사용합니다. DynamoDB는 관리형 NoSQL 데이터베이스이며 수평 확장과 글로벌 세컨더리 인덱스(GSI)를 지원합니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/chess-game-leaderboard-table-1.png" alt="chess-game-leaderboard-table-1" width="500" />
+    <img src="./images/dynamo-db.png" alt="DynamoDB" width="500" />
 </div>
 
-This works well, but doesn't scale well if we need to query anything by score. Hence, we can put the score as a sort key:
+체스 게임의 리더보드를 저장하는 테이블에서 시작합니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/chess-game-leaderboard-table-2.png" alt="chess-game-leaderboard-table-2" width="500" />
+    <img src="./images/chess-game-leaderboard-table-1.png" alt="체스 리더보드 테이블 1" width="500" />
 </div>
 
-Another problem with this design is that we're partitioning by month. This leads to a hotspot partition as the latest month will be unevenly accessed compared to the others.
-
-We could use a technique called write sharding, where we append a partition number for each key, calculated via `user_id % num_partitions`:
+기본 구조는 단순하지만 점수 기준 조회에는 적합하지 않을 수 있습니다. 점수를 Sort Key로 사용하는 방식으로 개선할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/chess-game-leaderboard-table-3.png" alt="chess-game-leaderboard-table-3" width="500" />
+    <img src="./images/chess-game-leaderboard-table-2.png" alt="체스 리더보드 테이블 2" width="500" />
 </div>
 
-An important trade-off to consider is how many partitions we should use:
-- The more partitions there are, the higher the write scalability
-- However, read scalability suffers as we need to query more partitions to collect aggregate results
+또 다른 문제는 월을 하나의 파티션 키로 사용하면 현재 월에 쓰기와 읽기가 집중되어 핫 파티션이 생길 수 있다는 점입니다.
 
-Using this approach requires that we use the "scatter-gather" technique we saw earlier, which grows in time complexity as we add more partitions:
+이를 완화하기 위해 `user_id % num_partitions` 같은 방식으로 파티션 번호를 키에 추가하는 **Write Sharding**을 사용할 수 있습니다.
 
 <div style="margin-left:3rem">
-    <img src="./images/scatter-gather-2.png" alt="scatter-gather-2" width="500" />
+    <img src="./images/chess-game-leaderboard-table-3.png" alt="체스 리더보드 테이블 3" width="500" />
 </div>
 
-To make a good evaluation on the number of partitions, we'd need to do some benchmarking.
+파티션 수에는 트레이드오프가 있습니다.
+- 파티션이 많을수록 쓰기 처리량을 더 넓게 분산할 수 있습니다.
+- 반면 집계 읽기에서는 더 많은 파티션을 조회해야 하므로 읽기 지연 시간이 증가합니다.
 
-This NoSQL approach still has one major downside - it is hard to calculate the specific rank of a user.
+이 방식에서는 앞에서 본 **scatter-gather** 패턴을 사용해 각 파티션의 결과를 수집하고 병합합니다.
 
-If we have sufficient scale to require us to shard, we could then perhaps tell users what "percentile" of scores they're in.
+<div style="margin-left:3rem">
+    <img src="./images/scatter-gather-2.png" alt="Scatter-Gather" width="500" />
+</div>
 
-A cron job can periodically run to analyze score distributions, based on which a user's percentile is determined, eg:
+적절한 파티션 수는 실제 데이터 분포와 QPS를 대상으로 벤치마킹해 결정해야 합니다.
+
+NoSQL 방식의 큰 단점 중 하나는 특정 사용자의 정확한 전역 순위를 계산하기 어렵다는 점입니다.
+
+정확한 순위 계산 비용이 지나치게 크다면 대규모 환경에서 사용자에게 백분위(percentile)를 보여주는 제품 설계도 고려할 수 있습니다.
+
+CRON 작업으로 점수 분포를 주기적으로 계산한 뒤 사용자의 백분위를 결정할 수 있습니다.
 
 ```
 10th percentile = score < 100
@@ -442,9 +430,9 @@ A cron job can periodically run to analyze score distributions, based on which a
 
 ---
 
-## Step 4: Wrap Up
+## 4단계: 마무리
 
-Other things to discuss if time permits:
-- **Faster retrieval** - We can cache the user object via a Redis hash with mapping `user_id -> user object`. This enables faster retrieval vs. querying the database.
-- **Breaking ties** - When two players have the same score, we can break the tie by sorting them based on last played game.
-- **System failure recovery** - In the event of a large-scale Redis outage, we can recreate the leaderboard by going through the MySQL WAL entries and recreate it via an ad-hoc script
+시간이 허용되면 추가로 논의할 수 있는 항목은 다음과 같습니다.
+- **더 빠른 사용자 정보 조회:** Redis Hash에서 `user_id -> user object` 매핑을 캐시해 데이터베이스 조회를 줄일 수 있습니다.
+- **동점 처리:** 두 사용자의 점수가 같다면 마지막 경기 시각 같은 보조 기준으로 순서를 정할 수 있습니다.
+- **대규모 장애 복구:** Redis 리더보드가 손실되면 MySQL의 경기 결과나 WAL/이벤트 이력을 이용해 임시 복구 스크립트로 리더보드를 재생성할 수 있습니다.

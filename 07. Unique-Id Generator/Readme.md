@@ -1,100 +1,100 @@
-# Chapter 7: Design a Unique ID Generator in Distributed Systems
+# 7장: 분산 시스템의 고유 ID 생성기 설계
 
-## Introduction
-This chapter addresses the challenge of designing a **unique ID generator** for distributed systems. Traditional auto-increment keys are unsuitable in distributed environments due to scalability and synchronization challenges. The focus is on creating unique, sortable, 64-bit numerical IDs that meet the following requirements:
-- IDs must be **unique** and **ordered by date**.
-- IDs must fit within **64 bits**.
-- The system should generate **over 10,000 IDs per second**.
-
----
-
-## Step 1: Understanding the Problem
-### Basic Requirements
-- IDs must be unique and numerical and should fit in 64 bits.
-- IDs increment with time but not strictly by `+1`.
-- IDs should be sortable by date.
-- System must handle high throughput (10,000 IDs/sec).
+## 소개
+이 장에서는 분산 시스템에서 사용할 **고유 ID 생성기(unique ID generator)**를 설계하는 문제를 다룹니다. 전통적인 자동 증가 키는 확장성과 동기화 문제 때문에 분산 환경에 적합하지 않습니다. 다음 요구사항을 만족하는 고유하고 정렬 가능하며 64비트 숫자로 구성된 ID를 만드는 데 초점을 맞춥니다.
+- ID는 **고유**해야 하며 **시간 순서로 정렬**할 수 있어야 합니다.
+- ID는 **64비트** 안에 들어가야 합니다.
+- 시스템은 **초당 10,000개 이상의 ID**를 생성할 수 있어야 합니다.
 
 ---
 
-## Step 2: High-Level Design Options
-### 1. Multi-Master Replication
-- **Approach:** Use database `auto_increment` with step increments (e.g., `+k` for k servers).
+## 1단계: 문제 이해
+### 기본 요구사항
+- ID는 고유한 숫자여야 하며 64비트 안에 들어가야 합니다.
+- ID는 시간에 따라 증가하지만 반드시 `+1`씩 증가할 필요는 없습니다.
+- ID는 시간 순서로 정렬할 수 있어야 합니다.
+- 시스템은 높은 처리량(초당 10,000개 ID)을 처리해야 합니다.
+
+---
+
+## 2단계: 상위 수준 설계 선택지
+### 1. 멀티 마스터 복제
+- **접근 방법:** 데이터베이스의 `auto_increment`를 사용하되 서버 수 k에 맞춰 증가 폭을 설정합니다. 예: 각 서버에서 `+k`씩 증가.
 
     <p align="left">
-    <img src="./images/multi-master.png"  alt="Multi Master" width="400">
+    <img src="./images/multi-master.png"  alt="멀티 마스터" width="400">
     </p>
 
-- **Drawbacks:**
-  - Hard to scale across data centers.
-  - IDs do not always increase with time.
-  - Scaling issues when servers are added/removed.
+- **단점:**
+  - 여러 데이터 센터로 확장하기 어렵습니다.
+  - ID가 항상 시간에 따라 증가하지는 않습니다.
+  - 서버를 추가하거나 제거할 때 확장 문제가 발생합니다.
 
-### 2. UUID (Universally Unique Identifier)
-- **Approach:** 
-    - Generate 128-bit unique identifiers independently on each server using UUID.
-    - UUIDs can be generated independently without coordination between servers
+### 2. UUID(Universally Unique Identifier)
+- **접근 방법:**
+    - 각 서버가 UUID를 사용해 독립적으로 128비트 고유 식별자를 생성합니다.
+    - 서버 간 조정 없이 독립적으로 UUID를 생성할 수 있습니다.
 
         <p align="left">
-        <img src="./images/uuid.png"  alt="UUID generator" width="600">
+        <img src="./images/uuid.png"  alt="UUID 생성기" width="600">
         </p>
 
-- **Advantages:**
-  - No coordination needed between servers.
-  - Scales easily with web servers.
-- **Drawbacks:**
-  - Exceeds 64-bit requirement.
-  - IDs are not sortable by time and may be non-numeric.
+- **장점:**
+  - 서버 간 조정이 필요하지 않습니다.
+  - 웹 서버 수를 늘려 쉽게 확장할 수 있습니다.
+- **단점:**
+  - 64비트 요구사항을 초과합니다.
+  - ID를 시간 순서로 정렬하기 어렵고 숫자가 아닌 문자가 포함될 수 있습니다.
 
 
-### 3. Ticket Server
-- **Approach:** Use a centralized database server to increment and assign IDs.
+### 3. 티켓 서버
+- **접근 방법:** 중앙 데이터베이스 서버에서 ID 값을 증가시키고 할당합니다.
 
     <p align="left">
-    <img src="./images/ticket-server.png"  alt="UUID generator" width="500">
+    <img src="./images/ticket-server.png"  alt="티켓 서버" width="500">
     </p>
 
-- **Advantages:**
-  - Simple to implement for small-scale systems.
-  - Generates numeric IDs.
-- **Drawbacks:**
-  - Single point of failure.
-  - Synchronization challenges in multi-server setups.
+- **장점:**
+  - 소규모 시스템에서는 구현이 단순합니다.
+  - 숫자 형태의 ID를 생성합니다.
+- **단점:**
+  - 단일 장애점이 됩니다.
+  - 여러 서버 구성에서는 동기화 문제가 발생합니다.
 
-### 4. Twitter Snowflake Approach
-- **Approach:** 
+### 4. Twitter Snowflake 방식
+- **접근 방법:**
 
     <div style="margin-left:3rem">
-      <img src="./images/twitter-snowflake.png"  alt="Snowflake approach" width="500">
+      <img src="./images/twitter-snowflake.png"  alt="Snowflake 방식" width="500">
     </div>
     <div style="margin-left:3rem">
-      <img src="./images/snowflake-id-breakdown.png"  alt="Snowflake ID breakdow" width="500">
+      <img src="./images/snowflake-id-breakdown.png"  alt="Snowflake ID 구성" width="500">
     </div>
 
-    - Divide IDs into sections to ensure uniqueness and scalability.
-    - **Sign Bit (1 bit):** Always `0`, potentially distinguishing signed and unsigned numbers.
-    - **Timestamp (41 bits):** Milliseconds since a custom epoch (Twitter's default is `1288834974657`, equivalent to Nov 04, 2010, 01:42:54 UTC). Ensures IDs are time-ordered.
-    - **Datacenter ID (5 bits):** Identifies up to `2^5 = 32` datacenters.
-    - **Machine ID (5 bits):** Identifies up to `2^5 = 32` machines within each datacenter.
-    - **Sequence Number (12 bits):** Tracks IDs generated on a machine within the same millisecond, supporting up to `2^12 = 4096` IDs per millisecond. The sequence resets to `0` every millisecond.
+    - 고유성과 확장성을 확보하기 위해 ID를 여러 비트 영역으로 나눕니다.
+    - **부호 비트(1비트):** 항상 `0`이며 필요하다면 signed/unsigned 숫자를 구분하는 데 사용할 수 있습니다.
+    - **타임스탬프(41비트):** 사용자 정의 epoch 이후의 밀리초 값을 사용합니다. Twitter 기본 epoch는 `1288834974657`이며 UTC 기준 2010년 11월 4일 01:42:54에 해당합니다. 이를 통해 ID를 시간 순서로 정렬할 수 있습니다.
+    - **데이터 센터 ID(5비트):** 최대 `2^5 = 32`개의 데이터 센터를 식별합니다.
+    - **머신 ID(5비트):** 각 데이터 센터 안에서 최대 `2^5 = 32`개의 머신을 식별합니다.
+    - **시퀀스 번호(12비트):** 같은 머신이 같은 밀리초 안에 생성한 ID를 구분합니다. 밀리초당 최대 `2^12 = 4096`개의 ID를 지원하며 매 밀리초마다 시퀀스를 `0`으로 초기화합니다.
 
 
 
-- **Advantages:**
-    - **Scalability:** Handles 10,000+ IDs per second across multiple servers.
-    - **Time-Order:** Ensures IDs are sortable by time.
-    - **Decentralization:** No single point of failure.
+- **장점:**
+    - **확장성:** 여러 서버에서 초당 10,000개 이상의 ID를 처리할 수 있습니다.
+    - **시간 순서:** ID를 시간 기준으로 정렬할 수 있습니다.
+    - **분산성:** 중앙 ID 서버에 의존하지 않으므로 단일 장애점을 피할 수 있습니다.
 
 
-## Step 4: Additional Considerations
-### 1. Clock Synchronization
-- **Challenge:** ID generation assumes synchronized clocks across servers.
-- **Solution:** Use **Network Time Protocol (NTP)** to minimize drift.
+## 4단계: 추가 고려 사항
+### 1. 시계 동기화
+- **과제:** ID 생성 방식은 서버들의 시계가 동기화되어 있다고 가정합니다.
+- **해결 방법:** 시계 오차를 줄이기 위해 **NTP(Network Time Protocol)**를 사용합니다.
 
-### 2. Section Length Tuning
-- Adjust section sizes (e.g., fewer sequence bits, more timestamp bits) based on use case.
+### 2. 비트 영역 길이 조정
+- 사용 사례에 따라 각 영역의 비트 수를 조정합니다. 예를 들어 시퀀스 비트를 줄이고 타임스탬프 비트를 늘릴 수 있습니다.
 
-### 3. High Availability
-- ID generators are mission-critical and must be fault-tolerant.
-- Consider redundancy and failover mechanisms.
+### 3. 고가용성
+- ID 생성기는 핵심 시스템이므로 장애 내성을 갖춰야 합니다.
+- 중복 구성과 장애 조치(failover) 메커니즘을 고려합니다.
 

@@ -1,131 +1,131 @@
-# Chapter 11: Design a News Feed System
+# 11장: 뉴스 피드 시스템 설계
 
-## Introduction
-A **news feed system** displays a constantly updating list of posts (status updates, photos, videos, and links) from a user’s connections. Examples include Facebook’s news feed, Instagram’s feed, and Twitter’s timeline. This chapter explores the design of a scalable news feed system.
-
----
-
-## Step 1: Understanding the Problem
-
-### Requirements
-1. **Platform:** The system supports both web and mobile apps.
-2. **Features:**
-   - Users can publish posts.
-   - Users can view posts from friends in their news feed.
-3. **Sorting:** Feeds are sorted in **reverse chronological order** for simplicity.
-4. **Scale:**
-   - Users can have up to 5,000 friends.
-   - 10 million daily active users (DAU).
-   - Feeds may include text, images, and videos.
+## 소개
+**뉴스 피드 시스템(news feed system)**은 사용자의 연결 관계에서 생성된 게시물(상태 업데이트, 사진, 동영상, 링크 등)을 지속적으로 갱신해 보여줍니다. Facebook 뉴스 피드, Instagram 피드, Twitter 타임라인 등이 대표적인 예입니다. 이 장에서는 확장 가능한 뉴스 피드 시스템의 설계를 살펴봅니다.
 
 ---
 
-## Step 2: High-Level Design
+## 1단계: 문제 이해
 
-### Overview
-The design includes two main flows:
-1. **Feed Publishing:** A user publishes a post, which is written to the database and propagated to their friends’ feeds.
-2. **News Feed Building:** A user retrieves their news feed by aggregating posts from friends in reverse chronological order.
-
----
-
-### News Feed APIs
-1. **Feed Publishing API:**
-   - **Endpoint:** `POST /v1/me/feed`
-   - **Params:** `content` (post text) and `auth_token` (authentication).
-
-2. **News Feed Retrieval API:**
-   - **Endpoint:** `GET /v1/me/feed`
-   - **Params:** `auth_token` (authentication).
+### 요구사항
+1. **플랫폼:** 웹과 모바일 앱을 모두 지원합니다.
+2. **기능:**
+   - 사용자가 게시물을 발행할 수 있습니다.
+   - 사용자는 뉴스 피드에서 친구들의 게시물을 볼 수 있습니다.
+3. **정렬:** 단순화를 위해 피드를 **최신순(역시간순)**으로 정렬합니다.
+4. **규모:**
+   - 사용자 한 명당 최대 5,000명의 친구를 가질 수 있습니다.
+   - 일간 활성 사용자(DAU) 1,000만 명
+   - 피드에는 텍스트, 이미지, 동영상이 포함될 수 있습니다.
 
 ---
 
-### Feed Publishing
+## 2단계: 상위 수준 설계
+
+### 개요
+설계는 크게 두 가지 흐름으로 구성됩니다.
+1. **피드 발행:** 사용자가 게시물을 작성하면 데이터베이스에 저장하고 친구들의 피드에 전파합니다.
+2. **뉴스 피드 생성:** 친구들의 게시물을 모아 최신순으로 정렬해 사용자의 뉴스 피드를 구성합니다.
+
+---
+
+### 뉴스 피드 API
+1. **피드 발행 API:**
+   - **엔드포인트:** `POST /v1/me/feed`
+   - **매개변수:** `content`(게시물 내용), `auth_token`(인증)
+
+2. **뉴스 피드 조회 API:**
+   - **엔드포인트:** `GET /v1/me/feed`
+   - **매개변수:** `auth_token`(인증)
+
+---
+
+### 피드 발행
 
    <div style="margin-left:3rem">
-      <img src="./images/feed-publishing.png" alt="Feed Publishing" width="400">
+      <img src="./images/feed-publishing.png" alt="피드 발행" width="400">
    </div>
 
-1. **User Interaction:** The user publishes a post via the feed publishing API.
-2. **Load Balancer:** Distributes traffic to web servers.
-3. **Web Servers:** Authenticate requests and redirect to services.
-4. **Post Service:** Stores the post in the database and cache.
-5. **Fanout Service:** Propagates the post to friends’ news feeds in the cache.
-6. **Notification Service:** Sends notifications to friends.
+1. **사용자 동작:** 사용자가 피드 발행 API를 통해 게시물을 작성합니다.
+2. **로드 밸런서:** 트래픽을 웹 서버에 분산합니다.
+3. **웹 서버:** 요청을 인증하고 관련 서비스로 전달합니다.
+4. **게시물 서비스:** 게시물을 데이터베이스와 캐시에 저장합니다.
+5. **팬아웃 서비스:** 게시물을 친구들의 뉴스 피드 캐시에 전파합니다.
+6. **알림 서비스:** 친구들에게 알림을 보냅니다.
 
 ---
 
-### News Feed Building
+### 뉴스 피드 생성
 
    <div style="margin-left:3rem">
-      <img src="./images/news-feed-building.png" alt="News Feed Building" width="400">
+      <img src="./images/news-feed-building.png" alt="뉴스 피드 생성" width="400">
    </div>
 
-1. **User Interaction:** The user requests their news feed via the retrieval API.
-2. **Load Balancer:** Distributes traffic to web servers.
-3. **Web Servers:** Forward requests to the news feed service.
-4. **News Feed Service:** Fetches post IDs from the news feed cache and retrieves complete post details from the database or cache.
+1. **사용자 동작:** 사용자가 조회 API를 통해 뉴스 피드를 요청합니다.
+2. **로드 밸런서:** 트래픽을 웹 서버에 분산합니다.
+3. **웹 서버:** 요청을 뉴스 피드 서비스로 전달합니다.
+4. **뉴스 피드 서비스:** 뉴스 피드 캐시에서 게시물 ID를 가져온 뒤 데이터베이스나 캐시에서 전체 게시물 정보를 조회합니다.
 
    
 ---
 
-## Step 3: Design Deep Dive
+## 3단계: 상세 설계
 
-### Feed Publishing Deep Dive
-1. **Web Servers:**
-   - Authenticate users using `auth_token`.
-   - Enforce rate limits to prevent spam.
+### 피드 발행 상세 설계
+1. **웹 서버:**
+   - `auth_token`으로 사용자를 인증합니다.
+   - 스팸을 방지하기 위해 요청 제한을 적용합니다.
 
-2. **Fanout Service:**
-   - **Fanout on Write:** Push posts to friends’ feeds at write time.
-     - **Pros:** Real-time updates, fast feed retrieval.
-     - **Cons:** Resource-intensive for users with many friends.
-   - **Fanout on Read:** Pull posts at read time.
-     - **Pros:** Efficient for inactive users.
-     - **Cons:** Slower feed retrieval.
-   - **Hybrid Approach:** Use a push model for most users and a pull model for high-connection users (e.g., celebrities).
+2. **팬아웃 서비스:**
+   - **쓰기 시 팬아웃(Fanout on Write):** 게시물 작성 시점에 친구들의 피드로 게시물을 푸시합니다.
+     - **장점:** 실시간에 가까운 갱신, 빠른 피드 조회
+     - **단점:** 친구가 많은 사용자는 많은 자원을 소비합니다.
+   - **읽기 시 팬아웃(Fanout on Read):** 피드를 읽는 시점에 게시물을 가져옵니다.
+     - **장점:** 비활성 사용자에게 불필요한 사전 계산을 하지 않아도 됩니다.
+     - **단점:** 피드 조회가 느려질 수 있습니다.
+   - **하이브리드 방식:** 대부분의 사용자에게는 푸시 모델을 사용하고, 연결 수가 매우 많은 사용자(예: 유명인)에게는 풀 모델을 사용합니다.
 
-        <img src="./images/feed-publishing-deep-dive.png" alt="Feed Publishing Deep Dive" width="500">
+        <img src="./images/feed-publishing-deep-dive.png" alt="피드 발행 상세 설계" width="500">
 
-    The **fanout service** works as following:
+    **팬아웃 서비스**는 다음과 같이 동작합니다.
 
-    1. **Fetch Friend IDs:** Retrieve the friend list from a graph database.
-    2. **Filter Friends from Cache:** Access user settings in the cache to exclude certain friends (e.g., muted friends or selective sharing preferences).
-    3. **Send to Message Queue:** Send the filtered friend list along with the new post ID to a message queue for processing.
-    4. **Fanout Workers:** Workers retrieve data from the message queue and update the news feed cache. The cache stores `<post_id, user_id>` mappings instead of full user and post objects to save memory.
-    5. **Store in News Feed Cache:** Append new post IDs to the friends’ news feed cache. A configurable limit ensures that only recent posts are stored, as most users focus on the latest content, keeping cache memory consumption manageable.
+    1. **친구 ID 조회:** 그래프 데이터베이스에서 친구 목록을 가져옵니다.
+    2. **캐시에서 친구 필터링:** 캐시의 사용자 설정을 확인해 음소거한 친구나 선택적 공유 설정 등에 따라 일부 친구를 제외합니다.
+    3. **메시지 큐로 전송:** 필터링한 친구 목록과 새 게시물 ID를 메시지 큐로 보냅니다.
+    4. **팬아웃 워커:** 워커가 메시지 큐의 데이터를 가져와 뉴스 피드 캐시를 갱신합니다. 메모리를 절약하기 위해 전체 사용자/게시물 객체 대신 `<post_id, user_id>` 매핑을 저장합니다.
+    5. **뉴스 피드 캐시에 저장:** 친구들의 뉴스 피드 캐시에 새 게시물 ID를 추가합니다. 대부분의 사용자가 최신 콘텐츠를 중심으로 보기 때문에 설정 가능한 최대 개수를 두고 최근 게시물만 저장하면 캐시 메모리 사용량을 관리하기 쉽습니다.
 
-        <img src="./images/fanout-service.png" alt="Fanout Service" width="500">
+        <img src="./images/fanout-service.png" alt="팬아웃 서비스" width="500">
 
-## News Feed Retrieval Deep Dive
+## 뉴스 피드 조회 상세 설계
 
-### Cache Architecture
-The cache is divided into five layers:
-1. **News Feed Cache:** Stores post IDs for quick retrieval.
-2. **Content Cache:** Stores post details (popular posts in hot cache).
-3. **Social Graph Cache:** Stores user relationship data.
-4. **Action Cache:** Tracks user actions (likes, replies, shares).
-5. **Counter Cache:** Maintains counts for likes, replies, followers, etc.
+### 캐시 아키텍처
+캐시는 다음 다섯 계층으로 나눌 수 있습니다.
+1. **뉴스 피드 캐시:** 빠른 조회를 위해 게시물 ID를 저장합니다.
+2. **콘텐츠 캐시:** 게시물 상세 정보를 저장합니다. 인기 게시물은 핫 캐시에 둘 수 있습니다.
+3. **소셜 그래프 캐시:** 사용자 관계 데이터를 저장합니다.
+4. **액션 캐시:** 좋아요, 답글, 공유 같은 사용자 행동을 추적합니다.
+5. **카운터 캐시:** 좋아요, 답글, 팔로워 등의 수치를 유지합니다.
 
-    <img src="./images/cache-architecture.png" alt="Cache Architecture" width="500">
+    <img src="./images/cache-architecture.png" alt="캐시 아키텍처" width="500">
 ---
 
-## Key Optimizations
+## 핵심 최적화
 
-### Scaling
-1. **Database Scaling:**
-   - Horizontal scaling and sharding.
-   - Use of read replicas for high-traffic queries.
-2. **Stateless Web Tier:** Keep web servers stateless to enable horizontal scaling.
+### 확장
+1. **데이터베이스 확장:**
+   - 수평 확장과 샤딩을 사용합니다.
+   - 트래픽이 많은 읽기 쿼리를 위해 읽기 복제본을 사용합니다.
+2. **무상태 웹 계층:** 웹 서버를 무상태로 유지해 수평 확장이 가능하도록 합니다.
 
-### Caching
-1. Store frequently accessed data in memory.
-2. Use cache layers to reduce latency and database load.
+### 캐싱
+1. 자주 접근하는 데이터를 메모리에 저장합니다.
+2. 캐시 계층을 사용해 지연 시간과 데이터베이스 부하를 줄입니다.
 
-### Reliability
-1. **Consistent Hashing:** Distribute requests evenly across servers.
-2. **Message Queues:** Decouple system components and buffer traffic.
+### 신뢰성
+1. **일관 해싱:** 요청을 여러 서버에 고르게 분산합니다.
+2. **메시지 큐:** 시스템 구성 요소를 분리하고 트래픽을 버퍼링합니다.
 
-### Monitoring
-1. Track key metrics like QPS (queries per second) and latency.
-2. Monitor cache hit rates and adjust configurations accordingly.
+### 모니터링
+1. QPS(초당 쿼리 수), 지연 시간 같은 핵심 지표를 추적합니다.
+2. 캐시 적중률을 모니터링하고 필요에 따라 설정을 조정합니다.
